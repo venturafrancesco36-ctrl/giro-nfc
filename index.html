@@ -274,8 +274,7 @@ function disegna(){
   // prima i bianchi, poi i colorati sopra
   const lst=L.filter(passa).sort((a,b)=>(statoDi(a.id)?1:0)-(statoDi(b.id)?1:0));
   lst.forEach(x=>{
-    const m=window.L.circleMarker([x.la,x.lo],Object.assign({bubblingMouseEvents:false},stile(x.id)));
-    m.on('click',()=>apri(x.id));
+    const m=window.L.circleMarker([x.la,x.lo],Object.assign({interactive:false},stile(x.id)));
     m.addTo(layer); markers.set(x.id,m);
   });
   statistiche();
@@ -319,10 +318,27 @@ function statistiche(){
 }
 
 /* ---------- fogli ---------- */
-function chiudiTutto(){$$('.sheet').forEach(s=>s.classList.remove('open'));}
+let selRing=null;
+function chiudiTutto(){$$('.sheet').forEach(s=>s.classList.remove('open')); if(selRing&&map.hasLayer(selRing)) map.removeLayer(selRing);}
 function apriSheet(id){chiudiTutto();$(id).classList.add('open');}
 $$('[data-close]').forEach(b=>b.onclick=chiudiTutto);
-map.on('click',chiudiTutto);
+// Tocco sulla mappa: apre il puntino più vicino al dito (entro ~32 px), altrimenti chiude le schede
+function puntoVicino(cp){
+  let best=null,bd=32*32;
+  markers.forEach((m,id)=>{
+    const p=map.latLngToContainerPoint(m.getLatLng());
+    const dx=p.x-cp.x,dy=p.y-cp.y,d=dx*dx+dy*dy;
+    if(d<bd||(d===bd&&statoDi(id))){bd=d;best=id;}
+  });
+  return best;
+}
+map.on('click',e=>{
+  const id=puntoVicino(e.containerPoint);
+  if(!id){chiudiTutto();return;}
+  // da lontano i puntini sono troppo fitti: prima avvicino la mappa
+  if(map.getZoom()<15){chiudiTutto();map.setView(e.latlng,Math.min(17,map.getZoom()+3));toast('Tocca il puntino');return;}
+  apri(id);
+});
 
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1800);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -348,7 +364,11 @@ function apri(id){
   $('#lReset').hidden=!st; $('#lDel').hidden=!x.extra;
   $('#rowNext').hidden=!(DB.giro&&DB.giro.ids.includes(id));
   apriSheet('#sLocale');
-  map.panTo([x.la,x.lo],{animate:true});
+  // cerchio sul locale scelto, e mappa spostata perché resti visibile sopra la scheda
+  if(!selRing) selRing=window.L.circleMarker([x.la,x.lo],{radius:16,color:'#38bdf8',weight:4,fill:false,interactive:false}).addTo(map);
+  else {selRing.setLatLng([x.la,x.lo]); if(!map.hasLayer(selRing)) selRing.addTo(map);}
+  const p=map.latLngToContainerPoint([x.la,x.lo]), sz=map.getSize();
+  map.panBy([p.x-sz.x/2, p.y-sz.y*0.25],{animate:true});
 }
 function setStato(id,s,p,q){
   const old=DB.stati[id]; const h=(old&&old.h)||[];
