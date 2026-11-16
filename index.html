@@ -14,7 +14,7 @@
 <style>
 :root{
   --bg:#0f1720; --panel:#16202b; --panel2:#1e2a37; --fg:#eef2f6; --muted:#9aa8b7; --line:#2a3846;
-  --venduta:#22c55e; --non:#ef4444; --ha:#3b82f6; --chiuso:#6b7280; --tornare:#f59e0b; --nuovo:#ffffff;
+  --venduta:#22c55e; --non:#ef4444; --ha:#3b82f6; --chiuso:#6b7280; --tornare:#f59e0b; --nogoogle:#a855f7; --nuovo:#ffffff;
   --accent:#38bdf8;
   --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
 }
@@ -57,7 +57,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer}
 .big.full{grid-column:1/-1}
 .big .dot{width:14px;height:14px}
 .big.sel{border-color:var(--fg)}
-.b-venduta{background:#14532d}.b-non{background:#5b1717}.b-ha{background:#172f5e}.b-chiuso{background:#2c3138}.b-tornare{background:#5c3a06}
+.b-venduta{background:#14532d}.b-non{background:#5b1717}.b-ha{background:#172f5e}.b-chiuso{background:#2c3138}.b-tornare{background:#5c3a06}.b-nogoogle{background:#3b1a5c;min-height:46px;font-size:15px}
 .row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .link{flex:1;min-height:46px;border-radius:12px;background:var(--panel2);display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;color:var(--fg);font-weight:600;font-size:14px;padding:6px 10px;text-align:center}
 .link.blue{background:#0b3a55;color:#bfe9ff}
@@ -109,6 +109,7 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
       <option value="non">Non vendute</option>
       <option value="ha">Hanno già la carta</option>
       <option value="chiuso">Chiusi</option>
+      <option value="nogoogle">Non su Google</option>
     </select>
   </div>
 </div>
@@ -135,6 +136,7 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
       <button class="big b-ha" data-s="ha"><span class="dot" style="background:var(--ha)"></span>Ha già la carta</button>
       <button class="big b-chiuso" data-s="chiuso"><span class="dot" style="background:var(--chiuso)"></span>Chiuso</button>
       <button class="big b-tornare" data-s="tornare"><span class="dot" style="background:var(--tornare)"></span>Da tornare</button>
+      <button class="big b-nogoogle full" data-s="nogoogle"><span class="dot" style="background:var(--nogoogle)"></span>Non è su Google Maps</button>
     </div>
   </div>
   <div id="lPrezzo" hidden>
@@ -210,7 +212,8 @@ const STATI={
   non:{t:'Non venduta',c:'#ef4444'},
   ha:{t:'Ha già la carta',c:'#3b82f6'},
   chiuso:{t:'Chiuso',c:'#6b7280'},
-  tornare:{t:'Da tornare',c:'#f59e0b'}
+  tornare:{t:'Da tornare',c:'#f59e0b'},
+  nogoogle:{t:'Non è su Google',c:'#a855f7'}
 };
 const $=s=>document.querySelector(s);
 const $$=s=>Array.from(document.querySelectorAll(s));
@@ -314,6 +317,7 @@ function statistiche(){
     `<span class="chip"><span class="dot" style="background:${STATI.non.c}"></span><b>${n('non')}</b></span>`+
     `<span class="chip"><span class="dot" style="background:${STATI.ha.c}"></span><b>${n('ha')}</b></span>`+
     `<span class="chip"><span class="dot" style="background:${STATI.chiuso.c}"></span><b>${n('chiuso')}</b></span>`+
+    `<span class="chip"><span class="dot" style="background:${STATI.nogoogle.c}"></span><b>${n('nogoogle')}</b></span>`+
     `<span class="chip">Visibili <b>${markers.size}</b></span>`;
 }
 
@@ -448,7 +452,11 @@ function ordina(start,pts){
 }
 let giroMode=(DB.giro&&DB.giro.mode)||'walking', giroStart='me', giroN=8;
 function seg(sel,cb){$$(sel+' button').forEach(b=>b.onclick=()=>{$$(sel+' button').forEach(x=>x.classList.toggle('sel',x===b));cb(b.dataset.v);});}
-seg('#gStart',v=>giroStart=v); seg('#gN',v=>giroN=+v); seg('#gMode',v=>{giroMode=v;if(DB.giro){DB.giro.mode=v;salva();mostraGiro();}});
+seg('#gStart',v=>giroStart=v); seg('#gN',v=>giroN=+v); seg('#gMode',v=>{giroMode=v;if(DB.giro){
+  const g=DB.giro; g.mode=v; delete g.geo; delete g.km; delete g.min; salva(); mostraGiro();
+  const ord=g.ids.map(byId).filter(Boolean).map(x=>({id:x.id,pos:[x.la,x.lo]}));
+  percorsoStrade(g.start,ord,v).then(r=>{if(r&&DB.giro===g){Object.assign(g,{ids:r.ids,geo:r.geo,km:r.km,min:r.min});salva();mostraGiro();}});
+}});
 $$('#gMode button').forEach(b=>b.classList.toggle('sel',b.dataset.v===giroMode));
 const giroLayer=window.L.layerGroup().addTo(map);
 $('#bGiro').onclick=()=>{apriSheet('#sGiro');mostraGiro();};
@@ -460,11 +468,36 @@ $('#gCalc').onclick=()=>{
     if(!cand.length){toast('Nessun locale da fare con questi filtri');return;}
     const ord=ordina(start,cand);
     DB.giro={ids:ord.map(o=>o.id),start,mode:giroMode,t:Date.now()}; salva(); mostraGiro(true);
+    // poi ottimizzo sulle strade vere (sensi unici, salite, scalinate)
+    toast('Calcolo il percorso sulle strade…');
+    percorsoStrade(start,ord,giroMode).then(r=>{
+      if(!r){toast('Percorso in linea d\'aria (niente rete)');return;}
+      DB.giro.ids=r.ids; DB.giro.geo=r.geo; DB.giro.km=r.km; DB.giro.min=r.min; salva(); mostraGiro(true);
+      toast('Percorso ottimizzato sulle strade');
+    });
   };
   if(giroStart==='me') posizione(p=>fai(p?[p.lat,p.lng]:null));
   else if(giroStart==='casa') fai(CASA);
   else {const c=map.getCenter();fai([c.lat,c.lng]);}
 };
+// Ordine migliore su strada, servizio gratuito OpenStreetMap (OSRM).
+// Scooter = profilo auto (sensi unici, niente zone pedonali); a piedi = profilo pedone (scalinate e creuze comprese).
+async function percorsoStrade(start,ord,mode){
+  const prof=mode==='walking'?'routed-foot/trip/v1/foot':'routed-car/trip/v1/driving';
+  const pts=[start].concat(ord.map(o=>o.pos));
+  const url=`https://routing.openstreetmap.de/${prof}/`+pts.map(p=>p[1].toFixed(6)+','+p[0].toFixed(6)).join(';')+
+    '?source=first&roundtrip=false&destination=any&overview=full&geometries=geojson';
+  try{
+    const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),15000);
+    const r=await fetch(url,{signal:ctl.signal}); clearTimeout(t);
+    const d=await r.json(); if(d.code!=='Ok'||!d.trips||!d.trips[0]) return null;
+    const idx=d.waypoints.slice(1).map((w,i)=>({id:ord[i].id,k:w.waypoint_index})).sort((a,b)=>a.k-b.k).map(o=>o.id);
+    const tr=d.trips[0];
+    // scooter in città: un po' più veloce dell'auto nel traffico
+    const min=tr.duration/60*(mode==='walking'?1:0.85);
+    return {ids:idx,geo:tr.geometry.coordinates.map(c=>[+c[1].toFixed(5),+c[0].toFixed(5)]),km:tr.distance,min};
+  }catch(e){return null;}
+}
 function mostraGiro(fit){
   giroLayer.clearLayers();
   const out=$('#gOut');
@@ -472,7 +505,8 @@ function mostraGiro(fit){
   $('#bGiro').classList.add('on');
   const g=DB.giro, xs=g.ids.map(byId).filter(Boolean);
   const pts=[g.start].concat(xs.map(x=>[x.la,x.lo]));
-  window.L.polyline(pts,{color:'#38bdf8',weight:4,opacity:.9,dashArray:'8 8',interactive:false}).addTo(giroLayer);
+  if(g.geo&&g.geo.length) window.L.polyline(g.geo,{color:'#38bdf8',weight:5,opacity:.9,interactive:false}).addTo(giroLayer);
+  else window.L.polyline(pts,{color:'#38bdf8',weight:4,opacity:.9,dashArray:'8 8',interactive:false}).addTo(giroLayer);
   xs.forEach((x,i)=>window.L.marker([x.la,x.lo],{icon:window.L.divIcon({className:'',html:`<div class="lbl">${i+1}</div>`,iconSize:[22,22],iconAnchor:[11,28]}),interactive:false}).addTo(giroLayer));
   const km=lunghezza(g.start,xs.map(x=>[x.la,x.lo]));
   const min=Math.round(km/(g.mode==='walking'?75:330)); // m al minuto, in linea d'aria × strade
@@ -486,7 +520,7 @@ function mostraGiro(fit){
     gm=`https://www.google.com/maps/dir/?api=1&destination=${dest.la},${dest.lo}${wp?'&waypoints='+encodeURIComponent(wp):''}&travelmode=${g.mode}`;
   }
   out.innerHTML=`<h3>Il giro · ${fatti}/${xs.length} fatti</h3>
-    <div class="small">Circa ${distTxt(km*1.3)} · ${Math.max(1,Math.round(min*1.3))} min di strada${g.mode==='driving'?' (scooter)':' a piedi'}, soste escluse</div>
+    <div class="small">${g.km?'':'Circa '}${distTxt(g.km||km*1.3)} · ${Math.max(1,Math.round(g.min||min*1.3))} min di strada${g.mode==='driving'?' in scooter':' a piedi'}, soste escluse${g.geo?' · ordine calcolato sulle strade vere':''}</div>
     <div class="row">${gm?`<a class="link blue" href="${gm}" target="_blank" rel="noopener">Apri il percorso in Google Maps</a>`:''}<button class="link" id="gStop">Chiudi giro</button></div>
     ${tappe.length>10?'<div class="small">Google Maps accetta 10 tappe alla volta: apri il percorso di nuovo dopo le prime.</div>':''}
     <div class="list" style="margin-top:10px">${xs.map((x,i)=>{const s=statoDi(x.id);const done=s&&!(s==='tornare'&&DB.stati[x.id].t<g.t);
