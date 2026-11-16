@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#0f1720">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Giro Carte NFC</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --bg:#0f1720; --panel:#16202b; --panel2:#1e2a37; --fg:#eef2f6; --muted:#9aa8b7; --line:#2a3846;
+  --venduta:#22c55e; --non:#ef4444; --ha:#3b82f6; --chiuso:#6b7280; --tornare:#f59e0b; --nuovo:#ffffff;
+  --accent:#38bdf8;
+  --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+button{font:inherit;color:inherit;border:0;cursor:pointer}
+#map{position:fixed;inset:0;background:#111}
+.leaflet-control-attribution{font-size:9px!important;opacity:.7}
+
+/* barra in alto */
+#top{position:fixed;left:0;right:0;top:0;z-index:1000;padding:calc(var(--safe-t) + 8px) 10px 0;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+#top > *{pointer-events:auto}
+#stats{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+#stats::-webkit-scrollbar{display:none}
+.chip{flex:none;background:rgba(15,23,32,.88);backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:13px;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.chip b{font-variant-numeric:tabular-nums}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;border:1.5px solid #000}
+#filters{display:flex;gap:6px}
+#filters select{flex:1;min-width:0;background:rgba(15,23,32,.9);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px;font:inherit;font-size:14px}
+
+/* pulsanti a destra */
+#fab{position:fixed;right:10px;bottom:calc(var(--safe-b) + 18px);z-index:1000;display:flex;flex-direction:column;gap:10px}
+.fab{width:54px;height:54px;border-radius:16px;background:rgba(15,23,32,.92);border:1px solid var(--line);display:grid;place-items:center;font-size:11px;line-height:1.1;text-align:center;padding:4px}
+.fab svg{width:24px;height:24px;display:block;margin:0 auto 2px}
+.fab.on{background:var(--accent);color:#04121c;border-color:var(--accent)}
+
+/* fogli dal basso */
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:2000;background:var(--panel);border-radius:18px 18px 0 0;border-top:1px solid var(--line);padding:10px 14px calc(var(--safe-b) + 14px);max-height:82%;overflow-y:auto;transform:translateY(105%);transition:transform .22s ease;box-shadow:0 -10px 30px rgba(0,0,0,.45)}
+.sheet.open{transform:none}
+@media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+.grab{width:42px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 10px}
+.sh-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.sh-head h2{margin:0;font-size:19px;line-height:1.2;text-wrap:balance}
+.meta{color:var(--muted);font-size:13px;margin-top:3px}
+.x{background:var(--panel2);border-radius:10px;width:36px;height:36px;flex:none;font-size:18px}
+.stato-now{margin:10px 0 0;font-size:13px;display:flex;align-items:center;gap:6px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.big{min-height:56px;border-radius:14px;font-weight:650;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px;padding:8px;background:var(--panel2);border:2px solid transparent}
+.big.full{grid-column:1/-1}
+.big .dot{width:14px;height:14px}
+.big.sel{border-color:var(--fg)}
+.b-venduta{background:#14532d}.b-non{background:#5b1717}.b-ha{background:#172f5e}.b-chiuso{background:#2c3138}.b-tornare{background:#5c3a06}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.link{flex:1;min-height:46px;border-radius:12px;background:var(--panel2);display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;color:var(--fg);font-weight:600;font-size:14px;padding:6px 10px;text-align:center}
+.link.blue{background:#0b3a55;color:#bfe9ff}
+.prices{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.prices button{flex:1 0 22%;min-height:50px;border-radius:12px;background:var(--panel2);font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.prices button.sel{background:var(--venduta);color:#04140a}
+.stepper{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:10px}
+.stepper button{width:56px;height:50px;border-radius:12px;background:var(--panel2);font-size:22px;font-weight:700}
+.stepper output{font-size:30px;font-weight:800;min-width:90px;text-align:center;font-variant-numeric:tabular-nums}
+.ok{width:100%;min-height:56px;border-radius:14px;background:var(--venduta);color:#04140a;font-weight:800;font-size:17px;margin-top:12px}
+.ghost{background:transparent;color:var(--muted);text-decoration:underline;padding:10px;font-size:13px}
+.hist{margin-top:10px;font-size:12px;color:var(--muted)}
+h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 6px}
+.list{display:flex;flex-direction:column;gap:6px}
+.item{display:flex;gap:10px;align-items:center;background:var(--panel2);border-radius:12px;padding:10px;text-align:left;width:100%}
+.item .n{flex:1;min-width:0}
+.item .n div:first-child{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .n div:last-child{font-size:12px;color:var(--muted)}
+.num{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#04121c;font-weight:800;display:grid;place-items:center;flex:none;font-size:13px}
+.seg{display:flex;background:var(--panel2);border-radius:12px;padding:4px;gap:4px;margin-top:8px}
+.seg button{flex:1;min-height:42px;border-radius:9px;background:transparent;font-weight:600;font-size:14px}
+.seg button.sel{background:var(--accent);color:#04121c}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
+.kpi{background:var(--panel2);border-radius:12px;padding:10px}
+.kpi b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12px;color:var(--muted)}
+#toast{position:fixed;left:50%;top:calc(var(--safe-t) + 110px);transform:translateX(-50%);z-index:3000;background:#0b2533;border:1px solid var(--accent);color:var(--fg);padding:10px 16px;border-radius:12px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90%;text-align:center}
+#toast.show{opacity:1}
+.me{width:18px;height:18px;border-radius:50%;background:#38bdf8;border:3px solid #fff;box-shadow:0 0 0 6px rgba(56,189,248,.3)}
+.lbl{background:var(--accent);color:#04121c;font-weight:800;border-radius:50%;width:22px;height:22px;display:grid;place-items:center;font-size:12px;border:2px solid #fff}
+textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
+.small{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="top">
+  <div id="stats"></div>
+  <div id="filters">
+    <select id="fZona" aria-label="Zona"><option value="">Tutte le zone</option></select>
+    <select id="fCat" aria-label="Tipo di locale"><option value="">Tutti i tipi</option></select>
+    <select id="fStato" aria-label="Stato">
+      <option value="">Tutti</option>
+      <option value="todo">Da fare</option>
+      <option value="nuovo">Mai visitati</option>
+      <option value="tornare">Da tornare</option>
+      <option value="venduta">Vendute</option>
+      <option value="non">Non vendute</option>
+      <option value="ha">Hanno già la carta</option>
+      <option value="chiuso">Chiusi</option>
+    </select>
+  </div>
+</div>
+
+<div id="fab">
+  <button class="fab" id="bGiro" aria-label="Giro di oggi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M6 17V9a4 4 0 0 1 4-4h6M18 7v8a4 4 0 0 1-4 4H8"/></svg>Giro</button>
+  <button class="fab" id="bLayer" aria-label="Cambia mappa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg><span id="layerTxt">Strade</span></button>
+  <button class="fab" id="bRiep" aria-label="Riepilogo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Conti</button>
+  <button class="fab" id="bMe" aria-label="Dove sono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Io</button>
+</div>
+
+<!-- scheda locale -->
+<div class="sheet" id="sLocale" role="dialog" aria-label="Locale">
+  <div class="grab"></div>
+  <div class="sh-head">
+    <div><h2 id="lNome"></h2><div class="meta" id="lMeta"></div></div>
+    <button class="x" data-close aria-label="Chiudi">✕</button>
+  </div>
+  <div class="stato-now" id="lStato"></div>
+  <div id="lButtons">
+    <div class="grid">
+      <button class="big b-venduta full" data-s="venduta"><span class="dot" style="background:var(--venduta)"></span>Venduta</button>
+      <button class="big b-non" data-s="non"><span class="dot" style="background:var(--non)"></span>Non venduta</button>
+      <button class="big b-ha" data-s="ha"><span class="dot" style="background:var(--ha)"></span>Ha già la carta</button>
+      <button class="big b-chiuso" data-s="chiuso"><span class="dot" style="background:var(--chiuso)"></span>Chiuso</button>
+      <button class="big b-tornare" data-s="tornare"><span class="dot" style="background:var(--tornare)"></span>Da tornare</button>
+    </div>
+  </div>
+  <div id="lPrezzo" hidden>
+    <h3>Prezzo</h3>
+    <div class="prices" id="priceChips"></div>
+    <div class="stepper"><button id="pMeno" aria-label="Meno 1 euro">−</button><output id="pVal">20 €</output><button id="pPiu" aria-label="Più 1 euro">+</button></div>
+    <div class="seg" id="qtySeg" aria-label="Quante carte"></div>
+    <button class="ok" id="pOk">Salva venduta</button>
+    <button class="ghost" id="pBack">Indietro</button>
+  </div>
+  <div class="row">
+    <a class="link blue" id="lGmaps" target="_blank" rel="noopener">Apri in Google Maps</a>
+    <a class="link" id="lNav" target="_blank" rel="noopener">Portami qui</a>
+  </div>
+  <div class="row" id="rowNext" hidden><button class="link" id="lNext" style="background:var(--accent);color:#04121c">Prossimo del giro →</button></div>
+  <div class="hist" id="lHist"></div>
+  <div class="row"><button class="ghost" id="lReset">Togli lo stato</button><button class="ghost" id="lDel" hidden>Elimina questo locale</button></div>
+</div>
+
+<!-- giro -->
+<div class="sheet" id="sGiro" role="dialog" aria-label="Giro di oggi">
+  <div class="grab"></div>
+  <div class="sh-head"><div><h2>Giro di oggi</h2><div class="meta">I locali da fare più vicini, in ordine di strada</div></div><button class="x" data-close aria-label="Chiudi">✕</button></div>
+  <h3>Partenza</h3>
+  <div class="seg" id="gStart"><button data-v="me" class="sel">Dove sono</button><button data-v="center">Centro mappa</button><button data-v="casa">Casa (Albaro)</button></div>
+  <h3>Quanti locali</h3>
+  <div class="seg" id="gN"><button data-v="5">5</button><button data-v="8" class="sel">8</button><button data-v="10">10</button><button data-v="15">15</button></div>
+  <h3>Come mi muovo</h3>
+  <div class="seg" id="gMode"><button data-v="walking" class="sel">A piedi</button><button data-v="driving">Scooter</button></div>
+  <div class="small">Usa i filtri in alto (zona, tipo) per scegliere dove andare. Vengono presi solo i locali mai visitati o “da tornare”.</div>
+  <button class="ok" id="gCalc" style="background:var(--accent)">Crea il giro</button>
+  <div id="gOut"></div>
+</div>
+
+<!-- riepilogo -->
+<div class="sheet" id="sRiep" role="dialog" aria-label="Riepilogo">
+  <div class="grab"></div>
+  <div class="sh-head"><div><h2>I miei conti</h2><div class="meta" id="rSub"></div></div><button class="x" data-close aria-label="Chiudi">✕</button></div>
+  <div class="kpis" id="rKpi"></div>
+  <h3>Oggi</h3><div class="list" id="rOggi"></div>
+  <h3>Ultime vendite</h3><div class="list" id="rVend"></div>
+  <h3>Da tornare</h3><div class="list" id="rTorn"></div>
+  <h3>Carte comprate</h3>
+  <div class="stepper"><button id="cMeno">−</button><output id="cVal">100</output><button id="cPiu">+</button></div>
+  <h3>Copia di sicurezza</h3>
+  <div class="small">I dati restano salvati su questo telefono. Ogni tanto salva una copia, così non perdi niente se cambi telefono o cancelli i dati del browser.</div>
+  <div class="row"><button class="link" id="bExport">Salva copia</button><button class="link" id="bImport">Carica copia</button></div>
+  <input type="file" id="fileIn" accept=".json,application/json" hidden>
+  <div class="small">Per aggiungere un locale che non c'è: tieni premuto il dito sulla mappa nel punto giusto.</div>
+  <div class="small">Dati dei locali © contributori OpenStreetMap. Foto satellite © Esri.</div>
+</div>
+
+<!-- nuovo locale -->
+<div class="sheet" id="sNuovo" role="dialog" aria-label="Nuovo locale">
+  <div class="grab"></div>
+  <div class="sh-head"><div><h2>Nuovo locale qui</h2><div class="meta">Scrivi solo il nome</div></div><button class="x" data-close aria-label="Chiudi">✕</button></div>
+  <div class="row"><input type="text" id="nNome" placeholder="Nome del locale" autocomplete="off"></div>
+  <div class="seg" id="nCat" style="flex-wrap:wrap"><button data-v="Bar" class="sel">Bar</button><button data-v="Ristorante">Ristorante</button><button data-v="Parrucchiere">Parrucchiere</button><button data-v="Negozio">Negozio</button></div>
+  <button class="ok" id="nOk" style="background:var(--accent)">Aggiungi</button>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="locali.js"></script>
+<script>
+(function(){
+'use strict';
+const KEY='giroNFC.v1';
+const CASA=[44.3975,8.9640];
+const STATI={
+  venduta:{t:'Venduta',c:'#22c55e'},
+  non:{t:'Non venduta',c:'#ef4444'},
+  ha:{t:'Ha già la carta',c:'#3b82f6'},
+  chiuso:{t:'Chiuso',c:'#6b7280'},
+  tornare:{t:'Da tornare',c:'#f59e0b'}
+};
+const $=s=>document.querySelector(s);
+const $$=s=>Array.from(document.querySelectorAll(s));
+
+/* ---------- dati salvati ---------- */
+let DB={stati:{},extra:[],carte:100,ultimoPrezzo:20,giro:null};
+try{const raw=localStorage.getItem(KEY); if(raw) DB=Object.assign(DB,JSON.parse(raw));}catch(e){}
+function salva(){try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){toast('Attenzione: non riesco a salvare');}}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
+
+/* ---------- locali ---------- */
+let L=[];
+function caricaLocali(){
+  L=(window.LOCALI||[]).map(r=>({id:r[0],n:r[1],c:r[2],la:r[3],lo:r[4],a:r[5],z:r[6]}));
+  DB.extra.forEach(x=>L.push(Object.assign({extra:true},x)));
+}
+caricaLocali();
+const byId=id=>L.find(x=>x.id===id);
+const statoDi=id=>DB.stati[id]&&DB.stati[id].s||null;
+
+/* ---------- mappa ---------- */
+const map=L_map();
+function L_map(){
+  const m=window.L.map('map',{zoomControl:false,preferCanvas:true,tap:true}).setView([44.407,8.94],13);
+  return m;
+}
+const R=window.L.canvas({padding:.5,tolerance:8});
+const sat=window.L.layerGroup([
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,attribution:'Foto © Esri'}),
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,opacity:.8,attribution:'Strade © Esri'})
+]);
+const strade=window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,maxNativeZoom:19,attribution:'© OpenStreetMap'});
+let isSat=true; sat.addTo(map);
+$('#bLayer').onclick=()=>{
+  if(isSat){map.removeLayer(sat);strade.addTo(map);$('#layerTxt').textContent='Satellite';}
+  else{map.removeLayer(strade);sat.addTo(map);$('#layerTxt').textContent='Strade';}
+  isSat=!isSat;
+};
+
+const markers=new Map();
+const layer=window.L.layerGroup().addTo(map);
+function stile(id){
+  const s=statoDi(id);
+  const z=map.getZoom(), r=z<13?2.5:z<14?3.5:z<15?4.5:z<16?6:z<17?7:9;
+  if(!s) return {radius:r,color:'#000',weight:z<15?1:1.5,fillColor:'#ffffff',fillOpacity:.95,renderer:R};
+  return {radius:r+2,color:'#000',weight:2,fillColor:STATI[s].c,fillOpacity:1,renderer:R};
+}
+let lastZ=null;
+map.on('zoomend',()=>{const z=map.getZoom();if(z===lastZ)return;lastZ=z;markers.forEach((m,id)=>{const st=stile(id);m.setStyle(st);m.setRadius(st.radius);});});
+function passa(x){
+  const z=$('#fZona').value,c=$('#fCat').value,f=$('#fStato').value,s=statoDi(x.id);
+  if(z&&x.z!==z) return false;
+  if(c&&x.c!==c) return false;
+  if(f==='todo') return !s||s==='tornare';
+  if(f==='nuovo') return !s;
+  if(f) return s===f;
+  return true;
+}
+function disegna(){
+  layer.clearLayers(); markers.clear();
+  // prima i bianchi, poi i colorati sopra
+  const lst=L.filter(passa).sort((a,b)=>(statoDi(a.id)?1:0)-(statoDi(b.id)?1:0));
+  lst.forEach(x=>{
+    const m=window.L.circleMarker([x.la,x.lo],Object.assign({bubblingMouseEvents:false},stile(x.id)));
+    m.on('click',()=>apri(x.id));
+    m.addTo(layer); markers.set(x.id,m);
+  });
+  statistiche();
+}
+function aggiornaPunto(id){
+  const m=markers.get(id), x=byId(id);
+  if(m){ if(passa(x)){m.setStyle(stile(id)); m.setRadius(stile(id).radius); m.bringToFront();} else {layer.removeLayer(m);markers.delete(id);} }
+  else disegna();
+  statistiche();
+}
+
+/* filtri */
+(function(){
+  const zone=[...new Set(L.map(x=>x.z))].sort((a,b)=>a.localeCompare(b,'it'));
+  zone.forEach(z=>$('#fZona').add(new Option(z,z)));
+  const cnt={}; L.forEach(x=>cnt[x.c]=(cnt[x.c]||0)+1);
+  Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]).forEach(c=>$('#fCat').add(new Option(c+' ('+cnt[c]+')',c)));
+  try{const f=JSON.parse(localStorage.getItem(KEY+'.f')||'{}');['fZona','fCat','fStato'].forEach(k=>{if(f[k]!=null)$('#'+k).value=f[k];});}catch(e){}
+  ['fZona','fCat','fStato'].forEach(k=>$('#'+k).onchange=()=>{
+    try{localStorage.setItem(KEY+'.f',JSON.stringify({fZona:$('#fZona').value,fCat:$('#fCat').value,fStato:$('#fStato').value}));}catch(e){}
+    disegna();
+    if(k==='fZona'&&$('#fZona').value){const pts=L.filter(x=>x.z===$('#fZona').value).map(x=>[x.la,x.lo]); if(pts.length) map.fitBounds(pts,{padding:[30,30],maxZoom:16});}
+  });
+})();
+
+function statistiche(){
+  const v=Object.values(DB.stati);
+  const n=s=>v.filter(x=>x.s===s).length;
+  const vend=v.filter(x=>x.s==='venduta');
+  const carte=vend.reduce((a,x)=>a+(x.q||1),0);
+  const euro=vend.reduce((a,x)=>a+(x.p||0)*(x.q||1),0);
+  $('#stats').innerHTML=
+    `<span class="chip">💶 <b>${euro} €</b></span>`+
+    `<span class="chip">Carte rimaste <b>${Math.max(0,DB.carte-carte)}</b></span>`+
+    `<span class="chip"><span class="dot" style="background:${STATI.venduta.c}"></span><b>${n('venduta')}</b></span>`+
+    `<span class="chip"><span class="dot" style="background:${STATI.tornare.c}"></span><b>${n('tornare')}</b></span>`+
+    `<span class="chip"><span class="dot" style="background:${STATI.non.c}"></span><b>${n('non')}</b></span>`+
+    `<span class="chip"><span class="dot" style="background:${STATI.ha.c}"></span><b>${n('ha')}</b></span>`+
+    `<span class="chip"><span class="dot" style="background:${STATI.chiuso.c}"></span><b>${n('chiuso')}</b></span>`+
+    `<span class="chip">Visibili <b>${markers.size}</b></span>`;
+}
+
+/* ---------- fogli ---------- */
+function chiudiTutto(){$$('.sheet').forEach(s=>s.classList.remove('open'));}
+function apriSheet(id){chiudiTutto();$(id).classList.add('open');}
+$$('[data-close]').forEach(b=>b.onclick=chiudiTutto);
+map.on('click',chiudiTutto);
+
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1800);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function quando(t){const d=new Date(t);return d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});}
+
+/* ---------- scheda locale ---------- */
+let cur=null, prezzo=20, qty=1;
+function apri(id){
+  const x=byId(id); if(!x) return; cur=id;
+  $('#lNome').textContent=x.n;
+  let meta=x.c+(x.a?' · '+x.a:'')+' · '+x.z;
+  if(me){meta+=' · '+distTxt(dist([me.lat,me.lng],[x.la,x.lo]));}
+  $('#lMeta').textContent=meta;
+  const st=DB.stati[id];
+  $('#lStato').innerHTML=st?`<span class="dot" style="background:${STATI[st.s].c}"></span> ${STATI[st.s].t}${st.s==='venduta'?' · '+st.p+' €'+(st.q>1?' × '+st.q:''):''} · ${quando(st.t)}`:'Mai visitato';
+  $$('#lButtons .big').forEach(b=>b.classList.toggle('sel',!!st&&b.dataset.s===st.s));
+  $('#lButtons').hidden=false; $('#lPrezzo').hidden=true;
+  const q=encodeURIComponent(x.n+' '+(x.a||'')+' Genova');
+  $('#lGmaps').href=`https://www.google.com/maps/search/?api=1&query=${q}`;
+  $('#lNav').href=`https://www.google.com/maps/dir/?api=1&destination=${x.la},${x.lo}&travelmode=${giroMode}`;
+  const h=(st&&st.h)||[];
+  $('#lHist').innerHTML=h.length?'Storico: '+h.slice(-5).reverse().map(e=>esc(STATI[e.s].t)+(e.p?' '+e.p+'€':'')+' ('+quando(e.t)+')').join(' · '):'';
+  $('#lReset').hidden=!st; $('#lDel').hidden=!x.extra;
+  $('#rowNext').hidden=!(DB.giro&&DB.giro.ids.includes(id));
+  apriSheet('#sLocale');
+  map.panTo([x.la,x.lo],{animate:true});
+}
+function setStato(id,s,p,q){
+  const old=DB.stati[id]; const h=(old&&old.h)||[];
+  const rec={s,t:Date.now()}; if(s==='venduta'){rec.p=p;rec.q=q||1;}
+  h.push(Object.assign({},rec));
+  DB.stati[id]=Object.assign(rec,{h});
+  salva(); aggiornaPunto(id);
+  if(navigator.vibrate) try{navigator.vibrate(30);}catch(e){}
+}
+$$('#lButtons .big').forEach(b=>b.onclick=()=>{
+  const s=b.dataset.s;
+  if(s==='venduta'){ prezzo=DB.ultimoPrezzo||20; qty=1; disegnaPrezzi(); $('#lButtons').hidden=true; $('#lPrezzo').hidden=false; return; }
+  setStato(cur,s); toast('Salvato: '+STATI[s].t); dopoSalvato();
+});
+const PREZZI=[10,15,20,25,30,35,40,50];
+function disegnaPrezzi(){
+  $('#priceChips').innerHTML=PREZZI.map(p=>`<button data-p="${p}" class="${p===prezzo?'sel':''}">${p}€</button>`).join('');
+  $$('#priceChips button').forEach(b=>b.onclick=()=>{prezzo=+b.dataset.p;disegnaPrezzi();});
+  $('#pVal').textContent=prezzo+' €';
+  $('#qtySeg').innerHTML=[1,2,3,4,5].map(n=>`<button data-q="${n}" class="${n===qty?'sel':''}">${n} cart${n>1?'e':'a'}</button>`).join('');
+  $$('#qtySeg button').forEach(b=>b.onclick=()=>{qty=+b.dataset.q;disegnaPrezzi();});
+  $('#pOk').textContent=`Salva venduta · ${prezzo*qty} €`;
+}
+$('#pMeno').onclick=()=>{prezzo=Math.max(0,prezzo-1);disegnaPrezzi();};
+$('#pPiu').onclick=()=>{prezzo+=1;disegnaPrezzi();};
+$('#pBack').onclick=()=>{$('#lButtons').hidden=false;$('#lPrezzo').hidden=true;};
+$('#pOk').onclick=()=>{DB.ultimoPrezzo=prezzo;setStato(cur,'venduta',prezzo,qty);toast(`Venduta! +${prezzo*qty} €`);dopoSalvato();};
+$('#lReset').onclick=()=>{delete DB.stati[cur];salva();aggiornaPunto(cur);toast('Stato tolto');apri(cur);};
+let delArm=false;
+$('#lDel').onclick=()=>{
+  if(!delArm){delArm=true;$('#lDel').textContent='Tocca ancora per eliminare';setTimeout(()=>{delArm=false;$('#lDel').textContent='Elimina questo locale';},3000);return;}
+  DB.extra=DB.extra.filter(x=>x.id!==cur);delete DB.stati[cur];salva();caricaLocali();disegna();chiudiTutto();toast('Eliminato');
+};
+function dopoSalvato(){
+  if(DB.giro&&DB.giro.ids.includes(cur)){ mostraGiro(); const nx=prossimo(); if(nx){apri(nx);return;} toast('Giro finito! 🎉'); }
+  chiudiTutto();
+}
+$('#lNext').onclick=()=>{const nx=prossimo(cur);if(nx)apri(nx);else toast('Giro finito!');};
+function prossimo(after){
+  if(!DB.giro) return null; const ids=DB.giro.ids;
+  const i=after?ids.indexOf(after):-1;
+  for(let k=i+1;k<ids.length;k++){const s=statoDi(ids[k]); if(!s||(s==='tornare'&&DB.stati[ids[k]].t<DB.giro.t)) return ids[k];}
+  for(let k=0;k<ids.length;k++){const s=statoDi(ids[k]); if(!s||(s==='tornare'&&DB.stati[ids[k]].t<DB.giro.t)) return ids[k];}
+  return null;
+}
+
+/* ---------- posizione ---------- */
+let me=null, meMarker=null, follow=false;
+function posizione(cb,quiet){
+  if(!navigator.geolocation){if(!quiet)toast('Posizione non disponibile');cb&&cb(null);return;}
+  navigator.geolocation.getCurrentPosition(p=>{
+    me={lat:p.coords.latitude,lng:p.coords.longitude};
+    if(!meMarker) meMarker=window.L.marker([me.lat,me.lng],{icon:window.L.divIcon({className:'',html:'<div class="me"></div>',iconSize:[18,18]}),interactive:false,zIndexOffset:1000}).addTo(map);
+    else meMarker.setLatLng([me.lat,me.lng]);
+    cb&&cb(me);
+  },()=>{if(!quiet)toast('Attiva la posizione (GPS) nel telefono');cb&&cb(null);},{enableHighAccuracy:true,timeout:12000,maximumAge:20000});
+}
+$('#bMe').onclick=()=>posizione(p=>{if(p)map.setView([p.lat,p.lng],17);});
+if(navigator.geolocation){ try{navigator.geolocation.watchPosition(p=>{me={lat:p.coords.latitude,lng:p.coords.longitude}; if(meMarker)meMarker.setLatLng([me.lat,me.lng]); else posizione(null,true);},()=>{},{enableHighAccuracy:true,maximumAge:15000});}catch(e){} }
+
+/* ---------- giro ---------- */
+function dist(a,b){const R=6371000,toR=Math.PI/180;const dLa=(b[0]-a[0])*toR,dLo=(b[1]-a[1])*toR;const s=Math.sin(dLa/2)**2+Math.cos(a[0]*toR)*Math.cos(b[0]*toR)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(s));}
+function distTxt(m){return m<1000?Math.round(m/10)*10+' m':(m/1000).toFixed(1).replace('.',',')+' km';}
+function lunghezza(start,pts){let d=0,p=start;pts.forEach(q=>{d+=dist(p,q);p=q;});return d;}
+function ordina(start,pts){
+  // vicino più vicino + 2-opt (percorso aperto)
+  let rest=pts.slice(),out=[],p=start;
+  while(rest.length){let bi=0,bd=Infinity;rest.forEach((q,i)=>{const d=dist(p,q.pos);if(d<bd){bd=d;bi=i;}});p=rest[bi].pos;out.push(rest.splice(bi,1)[0]);}
+  let migliorato=true,g=0;
+  while(migliorato&&g++<200){migliorato=false;
+    for(let i=0;i<out.length-1;i++)for(let k=i+1;k<out.length;k++){
+      const A=i===0?start:out[i-1].pos,B=out[i].pos,C=out[k].pos,D=k+1<out.length?out[k+1].pos:null;
+      const prima=dist(A,B)+(D?dist(C,D):0),dopo=dist(A,C)+(D?dist(B,D):0);
+      if(dopo+0.1<prima){out=out.slice(0,i).concat(out.slice(i,k+1).reverse(),out.slice(k+1));migliorato=true;}
+    }}
+  return out;
+}
+let giroMode=(DB.giro&&DB.giro.mode)||'walking', giroStart='me', giroN=8;
+function seg(sel,cb){$$(sel+' button').forEach(b=>b.onclick=()=>{$$(sel+' button').forEach(x=>x.classList.toggle('sel',x===b));cb(b.dataset.v);});}
+seg('#gStart',v=>giroStart=v); seg('#gN',v=>giroN=+v); seg('#gMode',v=>{giroMode=v;if(DB.giro){DB.giro.mode=v;salva();mostraGiro();}});
+$$('#gMode button').forEach(b=>b.classList.toggle('sel',b.dataset.v===giroMode));
+const giroLayer=window.L.layerGroup().addTo(map);
+$('#bGiro').onclick=()=>{apriSheet('#sGiro');mostraGiro();};
+$('#gCalc').onclick=()=>{
+  const fai=start=>{
+    if(!start){toast('Non trovo dove sei: uso il centro mappa');const c=map.getCenter();start=[c.lat,c.lng];}
+    const cand=L.filter(x=>{const s=statoDi(x.id);return (!s||s==='tornare')&&passa(x);})
+      .map(x=>({id:x.id,pos:[x.la,x.lo],d:dist(start,[x.la,x.lo])})).sort((a,b)=>a.d-b.d).slice(0,giroN);
+    if(!cand.length){toast('Nessun locale da fare con questi filtri');return;}
+    const ord=ordina(start,cand);
+    DB.giro={ids:ord.map(o=>o.id),start,mode:giroMode,t:Date.now()}; salva(); mostraGiro(true);
+  };
+  if(giroStart==='me') posizione(p=>fai(p?[p.lat,p.lng]:null));
+  else if(giroStart==='casa') fai(CASA);
+  else {const c=map.getCenter();fai([c.lat,c.lng]);}
+};
+function mostraGiro(fit){
+  giroLayer.clearLayers();
+  const out=$('#gOut');
+  if(!DB.giro){out.innerHTML='';$('#bGiro').classList.remove('on');return;}
+  $('#bGiro').classList.add('on');
+  const g=DB.giro, xs=g.ids.map(byId).filter(Boolean);
+  const pts=[g.start].concat(xs.map(x=>[x.la,x.lo]));
+  window.L.polyline(pts,{color:'#38bdf8',weight:4,opacity:.9,dashArray:'8 8',interactive:false}).addTo(giroLayer);
+  xs.forEach((x,i)=>window.L.marker([x.la,x.lo],{icon:window.L.divIcon({className:'',html:`<div class="lbl">${i+1}</div>`,iconSize:[22,22],iconAnchor:[11,28]}),interactive:false}).addTo(giroLayer));
+  const km=lunghezza(g.start,xs.map(x=>[x.la,x.lo]));
+  const min=Math.round(km/(g.mode==='walking'?75:330)); // m al minuto, in linea d'aria × strade
+  const fatti=xs.filter(x=>{const s=statoDi(x.id);return s&&!(s==='tornare'&&DB.stati[x.id].t<g.t);}).length;
+  // link Google Maps: max 9 tappe intermedie
+  const tappe=xs.filter(x=>{const s=statoDi(x.id);return !s||(s==='tornare'&&DB.stati[x.id].t<g.t);});
+  const usa=tappe.slice(0,10);
+  let gm='';
+  if(usa.length){
+    const dest=usa[usa.length-1],wp=usa.slice(0,-1).map(x=>x.la+','+x.lo).join('|');
+    gm=`https://www.google.com/maps/dir/?api=1&destination=${dest.la},${dest.lo}${wp?'&waypoints='+encodeURIComponent(wp):''}&travelmode=${g.mode}`;
+  }
+  out.innerHTML=`<h3>Il giro · ${fatti}/${xs.length} fatti</h3>
+    <div class="small">Circa ${distTxt(km*1.3)} · ${Math.max(1,Math.round(min*1.3))} min di strada${g.mode==='driving'?' (scooter)':' a piedi'}, soste escluse</div>
+    <div class="row">${gm?`<a class="link blue" href="${gm}" target="_blank" rel="noopener">Apri il percorso in Google Maps</a>`:''}<button class="link" id="gStop">Chiudi giro</button></div>
+    ${tappe.length>10?'<div class="small">Google Maps accetta 10 tappe alla volta: apri il percorso di nuovo dopo le prime.</div>':''}
+    <div class="list" style="margin-top:10px">${xs.map((x,i)=>{const s=statoDi(x.id);const done=s&&!(s==='tornare'&&DB.stati[x.id].t<g.t);
+      return `<button class="item" data-id="${esc(x.id)}" style="${done?'opacity:.55':''}"><span class="num" style="${done?'background:'+STATI[s].c:''}">${i+1}</span><span class="n"><div>${esc(x.n)}</div><div>${esc(x.c)}${x.a?' · '+esc(x.a):''}${s?' · '+STATI[s].t:''}</div></span></button>`;}).join('')}</div>`;
+  $$('#gOut .item').forEach(b=>b.onclick=()=>apri(b.dataset.id));
+  $('#gStop').onclick=()=>{DB.giro=null;salva();mostraGiro();toast('Giro chiuso');};
+  if(fit) map.fitBounds(pts,{padding:[40,40],maxZoom:17});
+}
+mostraGiro();
+
+/* ---------- riepilogo ---------- */
+$('#bRiep').onclick=()=>{riepilogo();apriSheet('#sRiep');};
+function riepilogo(){
+  const ent=Object.entries(DB.stati);
+  const vend=ent.filter(e=>e[1].s==='venduta').sort((a,b)=>b[1].t-a[1].t);
+  const carte=vend.reduce((a,e)=>a+(e[1].q||1),0), euro=vend.reduce((a,e)=>a+(e[1].p||0)*(e[1].q||1),0);
+  const visitati=ent.length;
+  const oggi0=new Date();oggi0.setHours(0,0,0,0);
+  const oggi=ent.filter(e=>e[1].t>=oggi0.getTime()).sort((a,b)=>b[1].t-a[1].t);
+  const eOggi=oggi.filter(e=>e[1].s==='venduta').reduce((a,e)=>a+(e[1].p||0)*(e[1].q||1),0);
+  $('#rSub').textContent=`${visitati} locali visitati · ${visitati?Math.round(vend.length/visitati*100):0}% vendite`;
+  $('#rKpi').innerHTML=`<div class="kpi"><b>${euro} €</b><span>incassati</span></div><div class="kpi"><b>${carte}</b><span>carte vendute</span></div><div class="kpi"><b>${Math.max(0,DB.carte-carte)}</b><span>carte rimaste</span></div>`;
+  const riga=e=>{const x=byId(e[0]);if(!x)return'';const s=e[1];return `<button class="item" data-id="${esc(x.id)}"><span class="dot" style="background:${STATI[s.s].c};width:14px;height:14px"></span><span class="n"><div>${esc(x.n)}</div><div>${STATI[s.s].t}${s.s==='venduta'?' · '+s.p+' €'+(s.q>1?' × '+s.q:''):''} · ${quando(s.t)}</div></span></button>`;};
+  $('#rOggi').innerHTML=oggi.length?`<div class="small">${oggi.length} visite · ${eOggi} € oggi</div>`+oggi.map(riga).join(''):'<div class="small">Ancora nessuna visita oggi.</div>';
+  $('#rVend').innerHTML=vend.slice(0,30).map(riga).join('')||'<div class="small">Nessuna vendita ancora.</div>';
+  const torn=ent.filter(e=>e[1].s==='tornare').sort((a,b)=>a[1].t-b[1].t);
+  $('#rTorn').innerHTML=torn.map(riga).join('')||'<div class="small">Nessuno.</div>';
+  $$('#sRiep .item').forEach(b=>b.onclick=()=>{const x=byId(b.dataset.id);map.setView([x.la,x.lo],18);apri(x.id);});
+  $('#cVal').textContent=DB.carte;
+}
+$('#cMeno').onclick=()=>{DB.carte=Math.max(0,DB.carte-10);salva();riepilogo();statistiche();};
+$('#cPiu').onclick=()=>{DB.carte+=10;salva();riepilogo();statistiche();};
+$('#bExport').onclick=async()=>{
+  const nome='giro-nfc-'+new Date().toISOString().slice(0,10)+'.json';
+  const blob=new Blob([JSON.stringify(DB)],{type:'application/json'});
+  try{
+    const file=new File([blob],nome,{type:'application/json'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'Copia Giro NFC'});return;}
+  }catch(e){if(e&&e.name==='AbortError')return;}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nome;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+  toast('Copia salvata nei download');
+};
+$('#bImport').onclick=()=>$('#fileIn').click();
+$('#fileIn').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d.stati!=='object')throw 0;DB=Object.assign({stati:{},extra:[],carte:100,ultimoPrezzo:20,giro:null},d);salva();caricaLocali();disegna();mostraGiro();riepilogo();toast('Copia caricata');}catch(x){toast('File non valido');}};
+  r.readAsText(f); e.target.value='';
+};
+
+/* ---------- aggiungi locale (tieni premuto) ---------- */
+let nuovoPos=null, nuovoCat='Bar';
+seg('#nCat',v=>nuovoCat=v);
+map.on('contextmenu',e=>{nuovoPos=e.latlng;$('#nNome').value='';apriSheet('#sNuovo');setTimeout(()=>$('#nNome').focus(),250);});
+$('#nOk').onclick=()=>{
+  const n=$('#nNome').value.trim();if(!n){toast('Scrivi il nome');return;}
+  const x={id:'x'+Date.now(),n,c:nuovoCat,la:+nuovoPos.lat.toFixed(6),lo:+nuovoPos.lng.toFixed(6),a:'',z:zonaDi(nuovoPos.lat,nuovoPos.lng)};
+  DB.extra.push(x);salva();caricaLocali();disegna();toast('Aggiunto');apri(x.id);
+};
+function zonaDi(la,lo){let b=null,bd=Infinity;L.forEach(x=>{if(x.extra)return;const d=(x.la-la)**2+(x.lo-lo)**2;if(d<bd){bd=d;b=x.z;}});return b||'Genova';}
+
+disegna();
+// prima apertura: centra su casa
+if(!localStorage.getItem(KEY+'.visto')){try{localStorage.setItem(KEY+'.visto','1');}catch(e){} map.setView(CASA,16);}
+})();
+</script>
+</body>
+</html>
