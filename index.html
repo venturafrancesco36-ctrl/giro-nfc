@@ -90,6 +90,7 @@ h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .lbl{background:var(--accent);color:#04121c;font-weight:800;border-radius:50%;width:22px;height:22px;display:grid;place-items:center;font-size:12px;border:2px solid #fff}
 textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
 .small{font-size:12px;color:var(--muted);margin-top:6px}
+.ztlwarn{margin-top:8px;background:#4a1010;color:#ffd7d7;border:1px solid #ff3b3b;border-radius:10px;padding:8px 10px;font-size:13px;font-weight:600}
 </style>
 </head>
 <body>
@@ -128,6 +129,7 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
     <div><h2 id="lNome"></h2><div class="meta" id="lMeta"></div></div>
     <button class="x" data-close aria-label="Chiudi">✕</button>
   </div>
+  <div class="ztlwarn" id="lZtl" hidden></div>
   <div class="stato-now" id="lStato"></div>
   <div id="lButtons">
     <div class="grid">
@@ -166,6 +168,8 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
   <div class="seg" id="gN"><button data-v="5">5</button><button data-v="8" class="sel">8</button><button data-v="10">10</button><button data-v="15">15</button></div>
   <h3>Come mi muovo</h3>
   <div class="seg" id="gMode"><button data-v="walking" class="sel">A piedi</button><button data-v="driving">Scooter</button></div>
+  <div id="gZtlBox" hidden><h3>ZTL (scooter)</h3>
+  <div class="seg" id="gZtl"><button data-v="salta" class="sel">Salta i locali in ZTL</button><button data-v="tieni">Tienili</button></div></div>
   <div class="small">Usa i filtri in alto (zona, tipo) per scegliere dove andare. Vengono presi solo i locali mai visitati o “da tornare”.</div>
   <button class="ok" id="gCalc" style="background:var(--accent)">Crea il giro</button>
   <div id="gOut"></div>
@@ -202,6 +206,7 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="locali.js"></script>
+<script src="ztl.js"></script>
 <script>
 (function(){
 'use strict';
@@ -227,7 +232,7 @@ try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}c
 /* ---------- locali ---------- */
 let L=[];
 function caricaLocali(){
-  L=(window.LOCALI||[]).map(r=>({id:r[0],n:r[1],c:r[2],la:r[3],lo:r[4],a:r[5],z:r[6]}));
+  L=(window.LOCALI||[]).map(r=>({id:r[0],n:r[1],c:r[2],la:r[3],lo:r[4],a:r[5],z:r[6],ztl:r[7]||''}));
   DB.extra.forEach(x=>L.push(Object.assign({extra:true},x)));
 }
 caricaLocali();
@@ -254,6 +259,9 @@ $('#bLayer').onclick=()=>{
 };
 
 const markers=new Map();
+// ZTL: zone rosse (scooter non residenti non entrano, 24 ore su 24)
+const ztlLayer=window.L.layerGroup().addTo(map);
+(window.ZTL||[]).forEach(z=>window.L.polygon(z.p,{color:'#ff3b3b',weight:2,dashArray:'6 6',fillColor:'#ff3b3b',fillOpacity:.12,interactive:false}).addTo(ztlLayer));
 const layer=window.L.layerGroup().addTo(map);
 function stile(id){
   const s=statoDi(id);
@@ -356,6 +364,8 @@ function apri(id){
   let meta=x.c+(x.a?' · '+x.a:'')+' · '+x.z;
   if(me){meta+=' · '+distTxt(dist([me.lat,me.lng],[x.la,x.lo]));}
   $('#lMeta').textContent=meta;
+  $('#lZtl').hidden=!x.ztl;
+  if(x.ztl) $('#lZtl').textContent='⛔ ZTL '+x.ztl+': in scooter non entri. Parcheggia fuori e vai a piedi.';
   const st=DB.stati[id];
   $('#lStato').innerHTML=st?`<span class="dot" style="background:${STATI[st.s].c}"></span> ${STATI[st.s].t}${st.s==='venduta'?' · '+st.p+' €'+(st.q>1?' × '+st.q:''):''} · ${quando(st.t)}`:'Mai visitato';
   $$('#lButtons .big').forEach(b=>b.classList.toggle('sel',!!st&&b.dataset.s===st.s));
@@ -450,20 +460,21 @@ function ordina(start,pts){
     }}
   return out;
 }
-let giroMode=(DB.giro&&DB.giro.mode)||'walking', giroStart='me', giroN=8;
+let giroMode=(DB.giro&&DB.giro.mode)||'walking', giroStart='me', giroN=8, giroZtl='salta';
 function seg(sel,cb){$$(sel+' button').forEach(b=>b.onclick=()=>{$$(sel+' button').forEach(x=>x.classList.toggle('sel',x===b));cb(b.dataset.v);});}
-seg('#gStart',v=>giroStart=v); seg('#gN',v=>giroN=+v); seg('#gMode',v=>{giroMode=v;if(DB.giro){
+seg('#gStart',v=>giroStart=v); seg('#gZtl',v=>giroZtl=v);
+function boxZtl(){$('#gZtlBox').hidden=giroMode!=='driving';} seg('#gN',v=>giroN=+v); seg('#gMode',v=>{giroMode=v;boxZtl();if(DB.giro){
   const g=DB.giro; g.mode=v; delete g.geo; delete g.km; delete g.min; salva(); mostraGiro();
   const ord=g.ids.map(byId).filter(Boolean).map(x=>({id:x.id,pos:[x.la,x.lo]}));
   percorsoStrade(g.start,ord,v).then(r=>{if(r&&DB.giro===g){Object.assign(g,{ids:r.ids,geo:r.geo,km:r.km,min:r.min});salva();mostraGiro();}});
 }});
-$$('#gMode button').forEach(b=>b.classList.toggle('sel',b.dataset.v===giroMode));
+$$('#gMode button').forEach(b=>b.classList.toggle('sel',b.dataset.v===giroMode)); boxZtl();
 const giroLayer=window.L.layerGroup().addTo(map);
 $('#bGiro').onclick=()=>{apriSheet('#sGiro');mostraGiro();};
 $('#gCalc').onclick=()=>{
   const fai=start=>{
     if(!start){toast('Non trovo dove sei: uso il centro mappa');const c=map.getCenter();start=[c.lat,c.lng];}
-    const cand=L.filter(x=>{const s=statoDi(x.id);return (!s||s==='tornare')&&passa(x);})
+    const cand=L.filter(x=>{const s=statoDi(x.id);return (!s||s==='tornare')&&passa(x)&&!(giroMode==='driving'&&giroZtl==='salta'&&x.ztl);})
       .map(x=>({id:x.id,pos:[x.la,x.lo],d:dist(start,[x.la,x.lo])})).sort((a,b)=>a.d-b.d).slice(0,giroN);
     if(!cand.length){toast('Nessun locale da fare con questi filtri');return;}
     const ord=ordina(start,cand);
@@ -519,8 +530,10 @@ function mostraGiro(fit){
     const dest=usa[usa.length-1],wp=usa.slice(0,-1).map(x=>x.la+','+x.lo).join('|');
     gm=`https://www.google.com/maps/dir/?api=1&destination=${dest.la},${dest.lo}${wp?'&waypoints='+encodeURIComponent(wp):''}&travelmode=${g.mode}`;
   }
+  const inZtl=xs.filter(x=>x.ztl).length;
   out.innerHTML=`<h3>Il giro · ${fatti}/${xs.length} fatti</h3>
     <div class="small">${g.km?'':'Circa '}${distTxt(g.km||km*1.3)} · ${Math.max(1,Math.round(g.min||min*1.3))} min di strada${g.mode==='driving'?' in scooter':' a piedi'}, soste escluse${g.geo?' · ordine calcolato sulle strade vere':''}</div>
+    ${g.mode==='driving'&&inZtl?`<div class="ztlwarn">⛔ ${inZtl} locali sono in ZTL: in scooter non entrare, lascialo fuori e prosegui a piedi.</div>`:''}
     <div class="row">${gm?`<a class="link blue" href="${gm}" target="_blank" rel="noopener">Apri il percorso in Google Maps</a>`:''}<button class="link" id="gStop">Chiudi giro</button></div>
     ${tappe.length>10?'<div class="small">Google Maps accetta 10 tappe alla volta: apri il percorso di nuovo dopo le prime.</div>':''}
     <div class="list" style="margin-top:10px">${xs.map((x,i)=>{const s=statoDi(x.id);const done=s&&!(s==='tornare'&&DB.stati[x.id].t<g.t);
