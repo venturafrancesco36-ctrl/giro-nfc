@@ -50,6 +50,12 @@ nav button{flex:1;background:none;padding:12px 4px 10px;font-size:13px;color:var
 nav button.on{color:var(--accent);font-weight:700}
 nav svg{width:24px;height:24px}
 section[hidden]{display:none}
+.conto{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:16px}
+.conto h2{font-size:14px;margin:0 0 6px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.conto .riga{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0}
+.conto .pm{display:flex;align-items:center;gap:8px}
+.conto .pm button{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:10px;width:44px;height:44px;font-size:20px}
+.conto .pm span{min-width:28px;text-align:center;font-weight:700;font-size:18px;font-variant-numeric:tabular-nums}
 #toast{position:fixed;left:50%;bottom:calc(var(--safe-b) + 80px);transform:translateX(-50%);background:#000c;padding:9px 14px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
 #toast.on{opacity:1}
 </style>
@@ -61,6 +67,7 @@ section[hidden]{display:none}
     <div class="sub" id="dataOggi"></div>
     <div class="now" id="now"></div>
     <div class="list" id="listaOggi"></div>
+    <div class="conto" id="conto"></div>
   </section>
 
   <section id="s-sett" hidden>
@@ -85,7 +92,7 @@ section[hidden]{display:none}
   <section id="s-link" hidden>
     <h1>Collegamenti</h1>
     <div class="sub">Le notifiche arrivano da Google Calendar</div>
-    <a class="btn2" href="https://calendar.google.com/calendar/r/week" target="_blank" rel="noopener">Apri Google Calendar</a>
+    <a class="btn2" href="https://calendar.google.com/calendar/r/day" target="_blank" rel="noopener">Apri Google Calendar</a>
     <a class="btn2" href="https://docs.google.com/spreadsheets/d/1_GBVLuz9YcA7s4l5_DSNbhamqQSzNgGCkgWpFyrnR9A/edit" target="_blank" rel="noopener">Apri il foglio Diario</a>
     <a class="btn2" href="../">Apri la mappa Giro Carte NFC</a>
   </section>
@@ -179,6 +186,16 @@ $('#copia').addEventListener('click',async e=>{
   setTimeout(()=>window.open('https://docs.google.com/spreadsheets/d/1_GBVLuz9YcA7s4l5_DSNbhamqQSzNgGCkgWpFyrnR9A/edit#gid=1','_blank'),600);
 });
 
+const CONTO_DEF=[['cand','Candidature inviate'],['locali','Locali visitati'],['carte','Carte vendute']];
+const dataKey=()=>{const d=new Date();return 'giornata.conto.'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+let CONTO={};try{CONTO=JSON.parse(localStorage.getItem(dataKey())||'{}')}catch(e){}
+function salvaConto(){try{localStorage.setItem(dataKey(),JSON.stringify(CONTO))}catch(e){toast('Non riesco a salvare')}}
+function disegnaConto(){
+  $('#conto').innerHTML='<h2>Conto di oggi</h2>'+CONTO_DEF.map(([k,l])=>`<div class="riga"><span>${l}</span><div class="pm"><button data-k="${k}" data-d="-1" aria-label="Meno">−</button><span>${CONTO[k]||0}</span><button data-k="${k}" data-d="1" aria-label="Più">+</button></div></div>`).join('');
+}
+$('#conto').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  const k=b.dataset.k;CONTO[k]=Math.max(0,(CONTO[k]||0)+Number(b.dataset.d));salvaConto();disegnaConto();});
+
 function toast(t){const x=$('#toast');x.textContent=t;x.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>x.classList.remove('on'),2200)}
 
 document.querySelector('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
@@ -187,9 +204,11 @@ document.querySelector('nav').addEventListener('click',e=>{const b=e.target.clos
   try{localStorage.setItem('giornata.tab',b.dataset.s)}catch(_){}
   window.scrollTo(0,0);
 });
-disegnaOggi();disegnaSett();disegnaImp();
+disegnaOggi();disegnaSett();disegnaImp();disegnaConto();
 setInterval(disegnaOggi,30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)disegnaOggi()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){
+  try{CONTO=JSON.parse(localStorage.getItem(dataKey())||'{}')}catch(e){CONTO={}}
+  disegnaOggi();disegnaConto();}});
 </script>
 </body>
 </html>
