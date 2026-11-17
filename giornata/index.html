@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1720">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>La mia giornata</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root{--bg:#0f1720;--panel:#16202b;--panel2:#1e2a37;--fg:#eef2f6;--muted:#9aa8b7;--line:#2a3846;--accent:#38bdf8;
+  --lavoro:#3b82f6;--locali:#f59e0b;--me:#22c55e;--pausa:#6b7280;
+  --safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,textarea,select{font:inherit;color:inherit}
+button{border:0;cursor:pointer}
+main{max-width:560px;margin:0 auto;padding:calc(var(--safe-t) + 14px) 16px calc(var(--safe-b) + 90px)}
+h1{font-size:22px;margin:0 0 2px}
+.sub{color:var(--muted);font-size:14px;margin-bottom:14px}
+.now{background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--accent);border-radius:14px;padding:14px;margin-bottom:16px}
+.now .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.now .att{font-size:20px;font-weight:700;margin:2px 0}
+.now .next{font-size:14px;color:var(--muted)}
+.list{display:flex;flex-direction:column;gap:8px}
+.item{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;border-left:5px solid var(--pausa)}
+.item.lavoro{border-left-color:var(--lavoro)}.item.locali{border-left-color:var(--locali)}.item.me{border-left-color:var(--me)}
+.item.passato{opacity:.45}
+.item.ora{outline:2px solid var(--accent)}
+.item .h{flex:none;width:96px;font-variant-numeric:tabular-nums;color:var(--muted);font-size:14px;padding-top:1px}
+.item .t{font-weight:600}
+.item .z{font-size:14px;color:var(--muted)}
+.days{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none}
+.days button{flex:none;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:7px 13px;font-size:14px}
+.days button.on{background:var(--accent);color:#04121c;border-color:var(--accent);font-weight:700}
+form{display:flex;flex-direction:column;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+input,textarea{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%}
+textarea{min-height:70px;resize:vertical}
+.btn{background:var(--accent);color:#04121c;font-weight:700;border-radius:10px;padding:12px}
+.btn2{display:block;text-align:center;text-decoration:none;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:8px}
+.nota{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.nota .d{font-size:13px;color:var(--muted)}
+.nota .a{font-weight:600}
+.nota .rm{float:right;background:none;color:var(--muted);font-size:13px;padding:2px 4px}
+.vuoto{color:var(--muted);text-align:center;padding:20px}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--panel);border-top:1px solid var(--line);padding-bottom:var(--safe-b);z-index:10}
+nav button{flex:1;background:none;padding:12px 4px 10px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px}
+nav button.on{color:var(--accent);font-weight:700}
+nav svg{width:24px;height:24px}
+section[hidden]{display:none}
+#toast{position:fixed;left:50%;bottom:calc(var(--safe-b) + 80px);transform:translateX(-50%);background:#000c;padding:9px 14px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+<main>
+  <section id="s-oggi">
+    <h1 id="titOggi">Oggi</h1>
+    <div class="sub" id="dataOggi"></div>
+    <div class="now" id="now"></div>
+    <div class="list" id="listaOggi"></div>
+  </section>
+
+  <section id="s-sett" hidden>
+    <h1>La settimana</h1>
+    <div class="sub">Tocca un giorno</div>
+    <div class="days" id="giorni"></div>
+    <div class="list" id="listaGiorno"></div>
+  </section>
+
+  <section id="s-imp" hidden>
+    <h1>Cosa ho imparato</h1>
+    <div class="sub">Una riga ogni sera</div>
+    <form id="fImp">
+      <input id="arg" placeholder="Argomento (es. Storia, Sport, Lavoro)" required maxlength="80">
+      <textarea id="nota" placeholder="Una riga di nota" required maxlength="500"></textarea>
+      <button class="btn" type="submit">Salva</button>
+    </form>
+    <div class="list" id="listaImp"></div>
+    <a class="btn2" id="copia" href="#">Copia tutto e apri il foglio Diario</a>
+  </section>
+
+  <section id="s-link" hidden>
+    <h1>Collegamenti</h1>
+    <div class="sub">Le notifiche arrivano da Google Calendar</div>
+    <a class="btn2" href="https://calendar.google.com/calendar/r/week" target="_blank" rel="noopener">Apri Google Calendar</a>
+    <a class="btn2" href="https://docs.google.com/spreadsheets/d/1_GBVLuz9YcA7s4l5_DSNbhamqQSzNgGCkgWpFyrnR9A/edit" target="_blank" rel="noopener">Apri il foglio Diario</a>
+    <a class="btn2" href="../">Apri la mappa Giro Carte NFC</a>
+  </section>
+</main>
+
+<nav>
+  <button data-s="oggi" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Oggi</button>
+  <button data-s="sett"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Settimana</button>
+  <button data-s="imp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h12"/></svg>Imparato</button>
+  <button data-s="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></svg>Link</button>
+</nav>
+<div id="toast"></div>
+
+<script>
+const GIORNI=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
+const ZONE={1:'Albaro e Nervi',2:'Darsena e Centro',3:"San Pier d'Arena e Principe",4:'Sestri e Bolzaneto',5:'Ricontatti: i locali "Da tornare"',6:'Locali rimasti'};
+const SERA={1:['Sport 45 min','20:00','20:45'],2:['Storia 30 min','20:00','20:30'],3:['Sport 45 min','20:00','20:45'],4:['Storia 30 min','20:00','20:30'],5:['Sport 45 min','20:00','20:45'],6:['Film classico','20:00','22:00']};
+
+function programma(g){
+  if(g===0) return [
+    {da:'00:00',a:'24:00',t:'Riposo',z:'Giornata libera',c:'me'},
+    {da:'21:30',a:'21:40',t:'Scrivo cosa ho imparato',c:'me'}];
+  const s=SERA[g];
+  const p=[
+    {da:'07:00',a:'08:00',t:'Sveglia e colazione',c:'pausa'},
+    {da:'08:00',a:'12:30',t:'Ricerca lavoro',z:'Offerte e candidature, una lettera per ogni offerta',c:'lavoro'},
+    {da:'12:30',a:'14:30',t:'Pranzo e pausa',c:'pausa'},
+    {da:'14:30',a:'19:00',t:g===5?'Ricontatti':'Vendo le carte',z:ZONE[g]+' · 5-10 locali',c:'locali'},
+    {da:'19:30',a:'20:00',t:'Cena',c:'pausa'},
+    {da:s[1],a:s[2],t:s[0],c:'me'}];
+  if(g!==6) p.push({da:'21:00',a:'21:30',t:'Lettura 30 min',c:'me'});
+  p.push({da:'21:30',a:'21:40',t:'Scrivo cosa ho imparato',c:'me'});
+  return p;
+}
+const min=h=>{const[a,b]=h.split(':').map(Number);return a*60+b};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function riga(x,stato){
+  const h=x.da==='00:00'?'Tutto il giorno':x.da+' – '+x.a;
+  return `<div class="item ${x.c} ${stato||''}"><div class="h">${h}</div><div><div class="t">${esc(x.t)}</div>${x.z?`<div class="z">${esc(x.z)}</div>`:''}</div></div>`;
+}
+
+function disegnaOggi(){
+  const d=new Date(),g=d.getDay(),m=d.getHours()*60+d.getMinutes();
+  $('#titOggi').textContent='Oggi è '+GIORNI[g].toLowerCase();
+  $('#dataOggi').textContent=d.toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'});
+  const p=programma(g);
+  let ora=null,prossimo=null;
+  $('#listaOggi').innerHTML=p.map(x=>{
+    const a=min(x.da),b=min(x.a);
+    let st='';
+    if(m>=b) st='passato'; else if(m>=a){st='ora'; if(!ora||x.da!=='00:00') ora=x;} else if(!prossimo) prossimo=x;
+    return riga(x,st);
+  }).join('');
+  let html='';
+  if(ora) html+=`<div class="lbl">Adesso</div><div class="att">${esc(ora.t)}</div><div class="next">Fino alle ${ora.a==='24:00'?'sera':ora.a}${ora.z?' · '+esc(ora.z):''}</div>`;
+  else html+=`<div class="lbl">Adesso</div><div class="att">Tempo libero</div>`;
+  if(prossimo){const mancano=min(prossimo.da)-m;
+    html+=`<div class="next" style="margin-top:6px">Poi: <b>${esc(prossimo.t)}</b> alle ${prossimo.da} (tra ${mancano>=60?Math.floor(mancano/60)+' h '+(mancano%60)+' min':mancano+' min'})</div>`;}
+  else if(!ora) html+=`<div class="next">Per oggi è finito. Buona notte!</div>`;
+  $('#now').innerHTML=html;
+}
+
+let giornoSel=new Date().getDay();
+function disegnaSett(){
+  const ord=[1,2,3,4,5,6,0];
+  $('#giorni').innerHTML=ord.map(g=>`<button data-g="${g}" class="${g===giornoSel?'on':''}">${GIORNI[g].slice(0,3)}</button>`).join('');
+  $('#listaGiorno').innerHTML=programma(giornoSel).map(x=>riga(x)).join('');
+}
+$('#giorni').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;giornoSel=+b.dataset.g;disegnaSett()});
+
+const KEY='giornata.imparato';
+let NOTE=[];try{NOTE=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){}
+const salva=()=>{try{localStorage.setItem(KEY,JSON.stringify(NOTE))}catch(e){toast('Non riesco a salvare')}};
+function disegnaImp(){
+  $('#listaImp').innerHTML=NOTE.length?NOTE.slice().reverse().map(n=>`<div class="nota"><button class="rm" data-id="${n.id}">Cancella</button><div class="d">${esc(n.data)}</div><div class="a">${esc(n.arg)}</div><div>${esc(n.nota)}</div></div>`).join(''):'<div class="vuoto">Ancora nessuna nota.</div>';
+}
+$('#fImp').addEventListener('submit',e=>{
+  e.preventDefault();
+  const arg=$('#arg').value.trim(),nota=$('#nota').value.trim(); if(!arg||!nota)return;
+  NOTE.push({id:Date.now(),data:new Date().toLocaleDateString('it-IT'),arg,nota}); salva();
+  $('#arg').value='';$('#nota').value=''; disegnaImp(); toast('Salvato');
+});
+$('#listaImp').addEventListener('click',e=>{const b=e.target.closest('.rm');if(!b)return;
+  if(!confirm('Cancello questa nota?'))return; NOTE=NOTE.filter(n=>n.id!=b.dataset.id); salva(); disegnaImp();});
+$('#copia').addEventListener('click',async e=>{
+  e.preventDefault();
+  const txt=NOTE.map(n=>[n.data,n.arg,n.nota.replace(/\s+/g,' ')].join('\t')).join('\n');
+  try{ if(txt) await navigator.clipboard.writeText(txt); toast(txt?'Copiato: incolla nella scheda "Cosa ho imparato"':'Niente da copiare'); }catch(_){toast('Copia non riuscita')}
+  setTimeout(()=>window.open('https://docs.google.com/spreadsheets/d/1_GBVLuz9YcA7s4l5_DSNbhamqQSzNgGCkgWpFyrnR9A/edit#gid=1','_blank'),600);
+});
+
+function toast(t){const x=$('#toast');x.textContent=t;x.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>x.classList.remove('on'),2200)}
+
+document.querySelector('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('main section').forEach(s=>s.hidden=s.id!=='s-'+b.dataset.s);
+  try{localStorage.setItem('giornata.tab',b.dataset.s)}catch(_){}
+  window.scrollTo(0,0);
+});
+disegnaOggi();disegnaSett();disegnaImp();
+setInterval(disegnaOggi,30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)disegnaOggi()});
+</script>
+</body>
+</html>
