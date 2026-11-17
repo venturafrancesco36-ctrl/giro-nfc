@@ -105,7 +105,8 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
       <option value="">Tutti</option>
       <option value="todo">Da fare</option>
       <option value="nuovo">Mai visitati</option>
-      <option value="tornare">Da tornare</option>
+      <option value="oggi">Da tornare oggi</option>
+      <option value="tornare">Da tornare (tutti)</option>
       <option value="venduta">Vendute</option>
       <option value="non">Non vendute</option>
       <option value="ha">Hanno già la carta</option>
@@ -149,6 +150,16 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
     <button class="ok" id="pOk">Salva venduta</button>
     <button class="ghost" id="pBack">Indietro</button>
   </div>
+  <div id="lTorn" hidden>
+    <h3>Quando torni?</h3>
+    <div class="grid" id="tornChips">
+      <button class="big b-tornare" data-g="0">Più tardi oggi</button>
+      <button class="big b-tornare" data-g="1">Domani</button>
+      <button class="big b-tornare" data-g="3">Tra 3 giorni</button>
+      <button class="big b-tornare" data-g="7">Tra una settimana</button>
+    </div>
+    <button class="ghost" id="tBack">Indietro</button>
+  </div>
   <div class="row">
     <a class="link blue" id="lGmaps" target="_blank" rel="noopener">Apri in Google Maps</a>
     <a class="link" id="lNav" target="_blank" rel="noopener">Portami qui</a>
@@ -170,7 +181,7 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
   <div class="seg" id="gMode"><button data-v="walking" class="sel">A piedi</button><button data-v="driving">Scooter</button></div>
   <div id="gZtlBox" hidden><h3>ZTL (scooter)</h3>
   <div class="seg" id="gZtl"><button data-v="salta" class="sel">Salta i locali in ZTL</button><button data-v="tieni">Tienili</button></div></div>
-  <div class="small">Usa i filtri in alto (zona, tipo) per scegliere dove andare. Vengono presi solo i locali mai visitati o “da tornare”.</div>
+  <div class="small">Usa i filtri in alto (zona, tipo) per scegliere dove andare. Vengono presi i locali mai visitati e quelli da tornare oggi (questi per primi).</div>
   <button class="ok" id="gCalc" style="background:var(--accent)">Crea il giro</button>
   <div id="gOut"></div>
 </div>
@@ -185,8 +196,10 @@ textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);bo
   <h3>Da tornare</h3><div class="list" id="rTorn"></div>
   <h3>Carte comprate</h3>
   <div class="stepper"><button id="cMeno">−</button><output id="cVal">100</output><button id="cPiu">+</button></div>
-  <h3>Copia di sicurezza</h3>
-  <div class="small">I dati restano salvati su questo telefono. Ogni tanto salva una copia, così non perdi niente se cambi telefono o cancelli i dati del browser.</div>
+  <h3>Salvataggio automatico</h3>
+  <div id="cloudBox"></div>
+  <h3>Copia su file</h3>
+  <div class="small">In più, puoi salvare una copia in un file sul telefono.</div>
   <div class="row"><button class="link" id="bExport">Salva copia</button><button class="link" id="bImport">Carica copia</button></div>
   <input type="file" id="fileIn" accept=".json,application/json" hidden>
   <div class="small">Per aggiungere un locale che non c'è: tieni premuto il dito sulla mappa nel punto giusto.</div>
@@ -226,8 +239,119 @@ const $$=s=>Array.from(document.querySelectorAll(s));
 /* ---------- dati salvati ---------- */
 let DB={stati:{},extra:[],carte:100,ultimoPrezzo:20,giro:null};
 try{const raw=localStorage.getItem(KEY); if(raw) DB=Object.assign(DB,JSON.parse(raw));}catch(e){}
-function salva(){try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){toast('Attenzione: non riesco a salvare');}}
+function salva(){DB.agg=Date.now();try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){toast('Attenzione: non riesco a salvare');} cloudPianifica();}
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
+
+/* ---------- salvataggio automatico online: Gist privato su GitHub (gratis) ----------
+   Ogni modifica viene inviata dopo pochi secondi. GitHub tiene anche tutte le versioni passate. */
+const CKEY=KEY+'.cloud', GH='https://api.github.com', GDESC='Giro Carte NFC - copia automatica', GFILE='giro-nfc.json';
+let CL={}; try{CL=JSON.parse(localStorage.getItem(CKEY)||'{}')||{};}catch(e){}
+function salvaCL(){try{localStorage.setItem(CKEY,JSON.stringify(CL));}catch(e){}}
+let cloudT=null, cloudBusy=false, cloudDirty=false;
+function gh(path,opt){
+  opt=opt||{}; const h={'Authorization':'Bearer '+CL.token,'Accept':'application/vnd.github+json'};
+  if(opt.body) h['Content-Type']='application/json';
+  return fetch(GH+path,Object.assign({},opt,{headers:h,cache:'no-store'}));
+}
+function cloudPianifica(){
+  if(!CL.token) return; cloudDirty=true; CL.pending=true; salvaCL();
+  clearTimeout(cloudT); cloudT=setTimeout(cloudInvia,3000); cloudAggiornaUI();
+}
+async function cloudInvia(keep){
+  if(!CL.token) return; if(cloudBusy){cloudDirty=true;return;}
+  cloudBusy=true; cloudDirty=false; clearTimeout(cloudT);
+  const files={[GFILE]:{content:JSON.stringify(DB)}};
+  try{
+    let r=null;
+    if(CL.gist){ const body=JSON.stringify({files}); r=await gh('/gists/'+CL.gist,{method:'PATCH',body,keepalive:!!keep&&body.length<60000}); if(r.status===404) CL.gist=null; }
+    if(!CL.gist){ r=await gh('/gists',{method:'POST',body:JSON.stringify({description:GDESC,public:false,files})}); if(r.ok) CL.gist=(await r.json()).id; }
+    if(r.ok){CL.ok=Date.now();CL.pending=false;CL.err='';}
+    else if(r.status===401) CL.err='La chiave non funziona più (scaduta o cancellata). Collegane una nuova.';
+    else if(r.status===403||r.status===404) CL.err='La chiave non ha il permesso “gist”. Creane una nuova col link qui sotto.';
+    else CL.err='GitHub non risponde ('+r.status+'). Riprovo da solo.';
+  }catch(e){CL.err='Niente rete: salvo appena torna.';}
+  cloudBusy=false; salvaCL(); cloudAggiornaUI();
+  if(cloudDirty) cloudPianifica();
+}
+async function cloudTrova(){
+  for(let p=1;p<=10;p++){
+    const r=await gh('/gists?per_page=100&page='+p); if(!r.ok) throw r.status;
+    const a=await r.json(); const g=a.find(g=>g.description===GDESC&&g.files&&g.files[GFILE]);
+    if(g) return g.id; if(a.length<100) break;
+  }
+  return null;
+}
+async function cloudLeggi(id){
+  const r=await gh('/gists/'+id); if(!r.ok) throw r.status;
+  const f=(await r.json()).files[GFILE]; if(!f) return null;
+  const txt=f.truncated?await (await fetch(f.raw_url)).text():f.content;
+  return JSON.parse(txt);
+}
+// unisce la copia online con quella del telefono: per ogni locale vince l'ultima cosa segnata
+function unisci(a,b){
+  const out=Object.assign({},a,{stati:Object.assign({},a.stati),extra:(a.extra||[]).slice()});
+  Object.entries(b.stati||{}).forEach(([id,s])=>{const l=out.stati[id]; if(!l||(s.t||0)>(l.t||0)) out.stati[id]=s;});
+  (b.extra||[]).forEach(x=>{if(!out.extra.some(y=>y.id===x.id)) out.extra.push(x);});
+  if((b.agg||0)>(a.agg||0)){['carte','ultimoPrezzo','giro'].forEach(k=>{if(b[k]!==undefined) out[k]=b[k];});}
+  return out;
+}
+async function cloudCollega(tok){
+  tok=(tok||'').trim().replace(/\s+/g,'');
+  if(!/^(ghp_|github_pat_)[A-Za-z0-9_]{20,}$/.test(tok)){toast('Questa non sembra una chiave GitHub');return;}
+  CL={token:tok}; toast('Collego…');
+  try{
+    const u=await gh('/user'); if(u.status===401){CL={};salvaCL();cloudAggiornaUI();toast('Chiave non valida');return;}
+    const id=await cloudTrova();
+    if(id){
+      CL.gist=id; const d=await cloudLeggi(id);
+      if(d&&d.stati){
+        const prima=Object.keys(DB.stati).length;
+        DB=unisci(DB,d); try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){}
+        caricaLocali(); disegna(); mostraGiro();
+        const dopo=Object.keys(DB.stati).length;
+        if(dopo>prima) toast('Ho ripreso dalla copia online '+(dopo-prima)+' locali segnati');
+      }
+    }
+  }catch(e){
+    if(e===403||e===404){CL={};salvaCL();cloudAggiornaUI();toast('La chiave non ha il permesso “gist”');return;}
+    if(typeof e!=='number'){CL={};salvaCL();cloudAggiornaUI();toast('Niente rete: riprova');return;}
+  }
+  salvaCL(); await cloudInvia();
+  if(CL.ok) toast('Salvataggio automatico attivo ✓'); riepilogoSeAperto();
+}
+function riepilogoSeAperto(){ if($('#sRiep').classList.contains('open')) riepilogo(); else cloudAggiornaUI(); }
+function cloudAggiornaUI(){ try{statoCloud();statistiche();}catch(e){} }
+function statoCloud(){
+  const box=$('#cloudBox'); if(!box) return;
+  if(CL.token){
+    const ora=CL.ok?new Date(CL.ok).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+    box.innerHTML=`<div class="small" style="font-size:14px;color:var(--fg)">${CL.err?'⚠️ '+esc(CL.err):CL.pending?'⏳ Sto salvando online…':'✅ Attivo. Ultimo salvataggio online: '+ora}</div>
+      <div class="small">Ogni cosa che segni viene salvata da sola nel tuo GitHub (privato). Se cambi telefono, apri l'app, collega la stessa chiave e ritrovi tutto.</div>
+      <div class="row"><button class="link" id="clOra">Salva adesso</button><button class="link" id="clVia">Scollega</button></div>`;
+    $('#clOra').onclick=()=>{toast('Salvo…');cloudInvia().then(()=>{if(CL.ok&&!CL.err)toast('Salvato online ✓');});};
+    let arm=false; $('#clVia').onclick=e=>{if(!arm){arm=true;e.target.textContent='Tocca ancora per scollegare';setTimeout(()=>{arm=false;e.target.textContent='Scollega';},3000);return;} CL={};salvaCL();riepilogoSeAperto();toast('Scollegato. I dati restano sul telefono.');};
+  } else {
+    box.innerHTML=`<div class="small" style="font-size:14px;color:var(--fg)">Spento. Attivalo una volta sola e non perdi più niente, nemmeno se cambi telefono.</div>
+      <div class="row"><a class="link blue" target="_blank" rel="noopener" href="https://github.com/settings/tokens/new?scopes=gist&description=Giro%20Carte%20NFC">1 · Crea la chiave su GitHub</a></div>
+      <div class="small">Si apre GitHub con tutto già pronto. In <b>Expiration</b> scegli <b>No expiration</b>, poi in fondo premi <b>Generate token</b> e copia il codice verde (inizia con ghp_).</div>
+      <div class="row"><button class="link" id="clIncolla" style="background:var(--accent);color:#04121c">2 · Incolla la chiave</button></div>
+      <div class="row" id="clManRow" hidden><input type="text" id="clTok" placeholder="Incolla qui la chiave ghp_…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="link" id="clOk">Collega</button></div>`;
+    $('#clIncolla').onclick=async()=>{
+      try{const t=await navigator.clipboard.readText(); if(t&&t.trim()){cloudCollega(t);return;}}catch(e){}
+      $('#clManRow').hidden=false; $('#clTok').focus(); toast('Tieni premuto nel riquadro e scegli Incolla');
+    };
+    $('#clOk').onclick=()=>cloudCollega($('#clTok').value);
+  }
+}
+// riprova da solo: quando torna la rete, quando riapri l'app, e prima di chiuderla
+window.addEventListener('online',()=>{if(CL.token&&CL.pending)cloudInvia();});
+document.addEventListener('visibilitychange',()=>{
+  if(!CL.token) return;
+  if(document.visibilityState==='hidden'&&CL.pending) cloudInvia(true);
+  if(document.visibilityState==='visible'&&CL.pending) cloudInvia();
+});
+setInterval(()=>{if(CL.token&&CL.pending&&!cloudBusy)cloudInvia();},60000);
+setTimeout(()=>{if(CL.token&&CL.pending)cloudInvia();},2000);
 
 /* ---------- locali ---------- */
 let L=[];
@@ -238,6 +362,17 @@ function caricaLocali(){
 caricaLocali();
 const byId=id=>L.find(x=>x.id===id);
 const statoDi=id=>DB.stati[id]&&DB.stati[id].s||null;
+// "da tornare" con una data: conta come da fare solo quando è il giorno (o è passato)
+function fineOggi(){const d=new Date();d.setHours(23,59,59,999);return d.getTime();}
+function dovuto(id){const st=DB.stati[id];return !!st&&st.s==='tornare'&&(!st.r||st.r<=fineOggi());}
+function giornoTxt(r){
+  if(!r) return '';
+  const a=new Date();a.setHours(0,0,0,0);const b=new Date(r);b.setHours(0,0,0,0);
+  const g=Math.round((b-a)/864e5);
+  if(g<0) return 'in ritardo';
+  if(g===0) return 'oggi'; if(g===1) return 'domani';
+  return b.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
+}
 
 /* ---------- mappa ---------- */
 const map=L_map();
@@ -275,7 +410,8 @@ function passa(x){
   const z=$('#fZona').value,c=$('#fCat').value,f=$('#fStato').value,s=statoDi(x.id);
   if(z&&x.z!==z) return false;
   if(c&&x.c!==c) return false;
-  if(f==='todo') return !s||s==='tornare';
+  if(f==='todo') return !s||dovuto(x.id);
+  if(f==='oggi') return dovuto(x.id);
   if(f==='nuovo') return !s;
   if(f) return s===f;
   return true;
@@ -317,8 +453,13 @@ function statistiche(){
   const vend=v.filter(x=>x.s==='venduta');
   const carte=vend.reduce((a,x)=>a+(x.q||1),0);
   const euro=vend.reduce((a,x)=>a+(x.p||0)*(x.q||1),0);
+  const dov=Object.keys(DB.stati).filter(dovuto).length;
+  const cl=!CL.token?'<span class="chip" id="chCloud" style="border-color:#f59e0b">☁️ Backup spento</span>'
+    :CL.err?'<span class="chip" id="chCloud" style="border-color:#ef4444">☁️ ⚠️</span>'
+    :`<span class="chip" id="chCloud">☁️ ${CL.pending?'…':'✓'}</span>`;
   $('#stats').innerHTML=
     `<span class="chip">💶 <b>${euro} €</b></span>`+
+    (dov?`<span class="chip" id="chOggi" style="border-color:#f59e0b">🔔 Da tornare oggi <b>${dov}</b></span>`:'')+
     `<span class="chip">Carte rimaste <b>${Math.max(0,DB.carte-carte)}</b></span>`+
     `<span class="chip"><span class="dot" style="background:${STATI.venduta.c}"></span><b>${n('venduta')}</b></span>`+
     `<span class="chip"><span class="dot" style="background:${STATI.tornare.c}"></span><b>${n('tornare')}</b></span>`+
@@ -326,7 +467,9 @@ function statistiche(){
     `<span class="chip"><span class="dot" style="background:${STATI.ha.c}"></span><b>${n('ha')}</b></span>`+
     `<span class="chip"><span class="dot" style="background:${STATI.chiuso.c}"></span><b>${n('chiuso')}</b></span>`+
     `<span class="chip"><span class="dot" style="background:${STATI.nogoogle.c}"></span><b>${n('nogoogle')}</b></span>`+
-    `<span class="chip">Visibili <b>${markers.size}</b></span>`;
+    `<span class="chip">Visibili <b>${markers.size}</b></span>`+cl;
+  const co=$('#chOggi'); if(co) co.onclick=()=>{$('#fStato').value='oggi';$('#fStato').onchange();const pts=L.filter(passa).map(x=>[x.la,x.lo]);if(pts.length)map.fitBounds(pts,{padding:[40,40],maxZoom:17});};
+  $('#chCloud').onclick=()=>{riepilogo();apriSheet('#sRiep');setTimeout(()=>$('#cloudBox').scrollIntoView({block:'center'}),250);};
 }
 
 /* ---------- fogli ---------- */
@@ -367,9 +510,9 @@ function apri(id){
   $('#lZtl').hidden=!x.ztl;
   if(x.ztl) $('#lZtl').textContent='⛔ ZTL '+x.ztl+': in scooter non entri. Parcheggia fuori e vai a piedi.';
   const st=DB.stati[id];
-  $('#lStato').innerHTML=st?`<span class="dot" style="background:${STATI[st.s].c}"></span> ${STATI[st.s].t}${st.s==='venduta'?' · '+st.p+' €'+(st.q>1?' × '+st.q:''):''} · ${quando(st.t)}`:'Mai visitato';
+  $('#lStato').innerHTML=st?`<span class="dot" style="background:${STATI[st.s].c}"></span><span>${STATI[st.s].t}${st.s==='venduta'?' · '+st.p+' €'+(st.q>1?' × '+st.q:''):''}${st.s==='tornare'&&st.r?' · <b style="color:#fbbf24">torna '+giornoTxt(st.r)+'</b>':''} · ${quando(st.t)}</span>`:'Mai visitato';
   $$('#lButtons .big').forEach(b=>b.classList.toggle('sel',!!st&&b.dataset.s===st.s));
-  $('#lButtons').hidden=false; $('#lPrezzo').hidden=true;
+  $('#lButtons').hidden=false; $('#lPrezzo').hidden=true; $('#lTorn').hidden=true;
   const q=encodeURIComponent(x.n+' '+(x.a||'')+' Genova');
   $('#lGmaps').href=`https://www.google.com/maps/search/?api=1&query=${q}`;
   $('#lNav').href=`https://www.google.com/maps/dir/?api=1&destination=${x.la},${x.lo}&travelmode=${giroMode}`;
@@ -384,9 +527,9 @@ function apri(id){
   const p=map.latLngToContainerPoint([x.la,x.lo]), sz=map.getSize();
   map.panBy([p.x-sz.x/2, p.y-sz.y*0.25],{animate:true});
 }
-function setStato(id,s,p,q){
+function setStato(id,s,p,q,r){
   const old=DB.stati[id]; const h=(old&&old.h)||[];
-  const rec={s,t:Date.now()}; if(s==='venduta'){rec.p=p;rec.q=q||1;}
+  const rec={s,t:Date.now()}; if(s==='venduta'){rec.p=p;rec.q=q||1;} if(s==='tornare'&&r) rec.r=r;
   h.push(Object.assign({},rec));
   DB.stati[id]=Object.assign(rec,{h});
   salva(); aggiornaPunto(id);
@@ -395,8 +538,15 @@ function setStato(id,s,p,q){
 $$('#lButtons .big').forEach(b=>b.onclick=()=>{
   const s=b.dataset.s;
   if(s==='venduta'){ prezzo=DB.ultimoPrezzo||20; qty=1; disegnaPrezzi(); $('#lButtons').hidden=true; $('#lPrezzo').hidden=false; return; }
+  if(s==='tornare'){ $('#lButtons').hidden=true; $('#lTorn').hidden=false; return; }
   setStato(cur,s); toast('Salvato: '+STATI[s].t); dopoSalvato();
 });
+$$('#tornChips button').forEach(b=>b.onclick=()=>{
+  const g=+b.dataset.g; const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+g);
+  setStato(cur,'tornare',null,null,d.getTime()+12*36e5);
+  toast('Da tornare: '+giornoTxt(d.getTime())); dopoSalvato();
+});
+$('#tBack').onclick=()=>{$('#lButtons').hidden=false;$('#lTorn').hidden=true;};
 const PREZZI=[10,15,20,25,30,35,40,50];
 function disegnaPrezzi(){
   $('#priceChips').innerHTML=PREZZI.map(p=>`<button data-p="${p}" class="${p===prezzo?'sel':''}">${p}€</button>`).join('');
@@ -474,8 +624,9 @@ $('#bGiro').onclick=()=>{apriSheet('#sGiro');mostraGiro();};
 $('#gCalc').onclick=()=>{
   const fai=start=>{
     if(!start){toast('Non trovo dove sei: uso il centro mappa');const c=map.getCenter();start=[c.lat,c.lng];}
-    const cand=L.filter(x=>{const s=statoDi(x.id);return (!s||s==='tornare')&&passa(x)&&!(giroMode==='driving'&&giroZtl==='salta'&&x.ztl);})
-      .map(x=>({id:x.id,pos:[x.la,x.lo],d:dist(start,[x.la,x.lo])})).sort((a,b)=>a.d-b.d).slice(0,giroN);
+    // i "da tornare oggi" hanno la precedenza (contano come se fossero a metà distanza)
+    const cand=L.filter(x=>{const s=statoDi(x.id);return (!s||dovuto(x.id))&&passa(x)&&!(giroMode==='driving'&&giroZtl==='salta'&&x.ztl);})
+      .map(x=>{const d=dist(start,[x.la,x.lo]);return {id:x.id,pos:[x.la,x.lo],d,k:dovuto(x.id)?d*0.5:d};}).sort((a,b)=>a.k-b.k).slice(0,giroN);
     if(!cand.length){toast('Nessun locale da fare con questi filtri');return;}
     const ord=ordina(start,cand);
     DB.giro={ids:ord.map(o=>o.id),start,mode:giroMode,t:Date.now()}; salva(); mostraGiro(true);
@@ -556,13 +707,14 @@ function riepilogo(){
   const eOggi=oggi.filter(e=>e[1].s==='venduta').reduce((a,e)=>a+(e[1].p||0)*(e[1].q||1),0);
   $('#rSub').textContent=`${visitati} locali visitati · ${visitati?Math.round(vend.length/visitati*100):0}% vendite`;
   $('#rKpi').innerHTML=`<div class="kpi"><b>${euro} €</b><span>incassati</span></div><div class="kpi"><b>${carte}</b><span>carte vendute</span></div><div class="kpi"><b>${Math.max(0,DB.carte-carte)}</b><span>carte rimaste</span></div>`;
-  const riga=e=>{const x=byId(e[0]);if(!x)return'';const s=e[1];return `<button class="item" data-id="${esc(x.id)}"><span class="dot" style="background:${STATI[s.s].c};width:14px;height:14px"></span><span class="n"><div>${esc(x.n)}</div><div>${STATI[s.s].t}${s.s==='venduta'?' · '+s.p+' €'+(s.q>1?' × '+s.q:''):''} · ${quando(s.t)}</div></span></button>`;};
+  const riga=e=>{const x=byId(e[0]);if(!x)return'';const s=e[1];const due=s.s==='tornare'&&s.r?' · <b style="color:'+(dovuto(e[0])?'#fbbf24':'inherit')+'">torna '+giornoTxt(s.r)+'</b>':'';return `<button class="item" data-id="${esc(x.id)}"><span class="dot" style="background:${STATI[s.s].c};width:14px;height:14px"></span><span class="n"><div>${esc(x.n)}</div><div>${STATI[s.s].t}${s.s==='venduta'?' · '+s.p+' €'+(s.q>1?' × '+s.q:''):''}${due} · ${quando(s.t)}</div></span></button>`;};
   $('#rOggi').innerHTML=oggi.length?`<div class="small">${oggi.length} visite · ${eOggi} € oggi</div>`+oggi.map(riga).join(''):'<div class="small">Ancora nessuna visita oggi.</div>';
   $('#rVend').innerHTML=vend.slice(0,30).map(riga).join('')||'<div class="small">Nessuna vendita ancora.</div>';
-  const torn=ent.filter(e=>e[1].s==='tornare').sort((a,b)=>a[1].t-b[1].t);
+  const torn=ent.filter(e=>e[1].s==='tornare').sort((a,b)=>(a[1].r||a[1].t)-(b[1].r||b[1].t));
   $('#rTorn').innerHTML=torn.map(riga).join('')||'<div class="small">Nessuno.</div>';
   $$('#sRiep .item').forEach(b=>b.onclick=()=>{const x=byId(b.dataset.id);map.setView([x.la,x.lo],18);apri(x.id);});
   $('#cVal').textContent=DB.carte;
+  statoCloud();
 }
 $('#cMeno').onclick=()=>{DB.carte=Math.max(0,DB.carte-10);salva();riepilogo();statistiche();};
 $('#cPiu').onclick=()=>{DB.carte+=10;salva();riepilogo();statistiche();};
