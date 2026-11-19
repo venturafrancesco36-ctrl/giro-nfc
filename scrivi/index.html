@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scrivi carta NFC</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--mut:#94a3b8;--ok:#22c55e;--ac:#3b82f6;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;font:17px system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:560px;margin:auto}
+h1{font-size:22px;margin:4px 0 14px}
+input,button{font:inherit;width:100%;padding:14px;border-radius:12px;border:0}
+input{background:var(--card);color:var(--tx);border:1px solid #334155}
+button{background:var(--ac);color:#fff;font-weight:600;margin-top:10px}
+button.sec{background:var(--card);border:1px solid #334155}
+button.big{background:var(--ok);font-size:19px;padding:18px}
+.res{background:var(--card);border-radius:12px;padding:12px 14px;margin-top:8px;cursor:pointer}
+.res small{color:var(--mut);display:block}
+.box{background:var(--card);border-radius:12px;padding:14px;margin-top:14px;word-break:break-all}
+.mut{color:var(--mut);font-size:14px}
+#msg{margin-top:12px;font-weight:600}
+.err{color:var(--err)}.ok{color:var(--ok)}
+details{margin-top:18px}
+</style>
+</head>
+<body>
+<h1>Scrivi carta NFC</h1>
+
+<input id="q" placeholder="Cerca il locale (nome + zona)" autocomplete="off">
+<div id="list"></div>
+
+<div id="sel" class="box" hidden>
+  <b id="nome"></b>
+  <div class="mut" id="ind"></div>
+  <div class="mut" style="margin-top:8px">Link recensione:</div>
+  <div id="url"></div>
+  <button class="big" id="scrivi">Scrivi sulla carta</button>
+  <button class="sec" id="copia">Copia link</button>
+  <button class="sec" id="prova">Prova il link</button>
+</div>
+<div id="msg"></div>
+
+<details id="imp">
+  <summary class="mut">Impostazioni (chiave Google)</summary>
+  <p class="mut">Serve una volta sola. Google Cloud → abilita "Places API (New)" → crea una chiave API (limitala al sito github.io). Resta solo su questo telefono.</p>
+  <input id="key" placeholder="Chiave API Google">
+  <button class="sec" id="salva">Salva chiave</button>
+</details>
+
+<script>
+const $=id=>document.getElementById(id);
+const K='gkey';
+let key=localStorage.getItem(K)||'';
+$('key').value=key;
+if(!key)$('imp').open=true;
+$('salva').onclick=()=>{key=$('key').value.trim();localStorage.setItem(K,key);say('Chiave salvata','ok')};
+
+function say(t,c){const m=$('msg');m.textContent=t;m.className=c||''}
+let tmr,cur=null;
+$('q').oninput=()=>{clearTimeout(tmr);tmr=setTimeout(cerca,350)};
+
+async function cerca(){
+  const q=$('q').value.trim();
+  $('list').innerHTML='';
+  if(q.length<3)return;
+  if(!key){say('Inserisci prima la chiave Google','err');$('imp').open=true;return}
+  try{
+    const r=await fetch('https://places.googleapis.com/v1/places:autocomplete',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Goog-Api-Key':key},
+      body:JSON.stringify({input:q,languageCode:'it',regionCode:'IT',
+        locationBias:{circle:{center:{latitude:44.4056,longitude:8.9463},radius:30000}}})
+    });
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error?.message||r.status);
+    say('');
+    (j.suggestions||[]).filter(s=>s.placePrediction).forEach(s=>{
+      const p=s.placePrediction,d=document.createElement('div');
+      d.className='res';
+      d.innerHTML='<b></b><small></small>';
+      d.firstChild.textContent=p.structuredFormat?.mainText?.text||p.text.text;
+      d.lastChild.textContent=p.structuredFormat?.secondaryText?.text||'';
+      d.onclick=()=>scegli(p);
+      $('list').appendChild(d);
+    });
+  }catch(e){say('Errore ricerca: '+e.message,'err')}
+}
+
+function scegli(p){
+  cur={id:p.placeId,url:'https://search.google.com/local/writereview?placeid='+p.placeId};
+  $('nome').textContent=p.structuredFormat?.mainText?.text||p.text.text;
+  $('ind').textContent=p.structuredFormat?.secondaryText?.text||'';
+  $('url').textContent=cur.url;
+  $('sel').hidden=false;$('list').innerHTML='';say('');
+  $('sel').scrollIntoView({behavior:'smooth'});
+}
+
+if(!('NDEFReader' in window)){$('scrivi').hidden=true;$('copia').className='big'}
+$('copia').onclick=async()=>{await navigator.clipboard.writeText(cur.url);say('Link copiato. Ora aprilo in NFC Tools e incolla.','ok')};
+$('prova').onclick=()=>window.open(cur.url,'_blank');
+
+$('scrivi').onclick=async()=>{
+  if(!('NDEFReader' in window)){say('Questo browser non scrive NFC. Usa Chrome su Android.','err');return}
+  try{
+    say('Avvicina la carta al retro del telefono…');
+    const n=new NDEFReader();
+    await n.write({records:[{recordType:'url',data:cur.url}]});
+    say('✓ Scritta! Prova ad avvicinarla per controllare.','ok');
+  }catch(e){say('Errore scrittura: '+e.message,'err')}
+};
+</script>
+</body>
+</html>
