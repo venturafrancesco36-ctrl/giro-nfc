@@ -89,13 +89,13 @@ function scegli(p){
   cur={id:p.placeId,url:'https://search.google.com/local/writereview?placeid='+p.placeId};
   $('nome').textContent=p.structuredFormat?.mainText?.text||p.text.text;
   $('ind').textContent=p.structuredFormat?.secondaryText?.text||'';
-  $('url').textContent=cur.url;
+  $('url').textContent=cur.url.replace('https://','');
   $('sel').hidden=false;$('list').innerHTML='';say('');
   $('sel').scrollIntoView({behavior:'smooth'});
 }
 
 if(!('NDEFReader' in window)){$('scrivi').hidden=true;$('copia').className='big'}
-$('copia').onclick=async()=>{await navigator.clipboard.writeText(cur.url);say('Link copiato. Ora aprilo in NFC Tools e incolla.','ok')};
+$('copia').onclick=async()=>{await navigator.clipboard.writeText(cur.url.replace('https://',''));say('Link copiato. Ora aprilo in NFC Tools e incolla.','ok')};
 $('prova').onclick=()=>window.open(cur.url,'_blank');
 
 $('scrivi').onclick=async()=>{
