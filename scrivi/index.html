@@ -50,9 +50,8 @@ details{margin-top:18px}
 <script>
 const $=id=>document.getElementById(id);
 const K='gkey';
-let key=localStorage.getItem(K)||'';
+let key=localStorage.getItem(K)||'AIzaSyBjt706UuvP2Lc6uhNz29idxxWyRXTf55s';
 $('key').value=key;
-if(!key)$('imp').open=true;
 $('salva').onclick=()=>{key=$('key').value.trim();localStorage.setItem(K,key);say('Chiave salvata','ok')};
 
 function say(t,c){const m=$('msg');m.textContent=t;m.className=c||''}
@@ -74,7 +73,7 @@ async function cerca(){
     const j=await r.json();
     if(!r.ok)throw new Error(j.error?.message||r.status);
     say('');
-    (j.suggestions||[]).filter(s=>s.placePrediction).forEach(s=>{
+    (j.suggestions||[]).filter(s=>s.placePrediction&&!(s.placePrediction.types||[]).some(t=>['geocode','political','route'].includes(t))).forEach(s=>{
       const p=s.placePrediction,d=document.createElement('div');
       d.className='res';
       d.innerHTML='<b></b><small></small>';
